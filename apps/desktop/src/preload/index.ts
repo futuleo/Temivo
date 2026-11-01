@@ -1,9 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { MIND_MAP_CHANNELS } from '../shared/desktop-api';
+import { AI_CHANNELS, MIND_MAP_CHANNELS } from '../shared/desktop-api';
 import type { DesktopApi } from '../shared/desktop-api';
 
 const api: DesktopApi = {
+  ai: {
+    getSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+    updateSettings: (update) => ipcRenderer.invoke(AI_CHANNELS.updateSettings, update),
+    generate: (request) => ipcRenderer.invoke(AI_CHANNELS.generate, request),
+    cancelGeneration: (mapId, sequence) => ipcRenderer.invoke(AI_CHANNELS.cancelGeneration, mapId, sequence),
+  },
   maps: {
     loadLibrary: () => ipcRenderer.invoke(MIND_MAP_CHANNELS.loadLibrary),
     saveLibrary: (library, expectedRevision) => ipcRenderer.invoke(MIND_MAP_CHANNELS.saveLibrary, library, expectedRevision),

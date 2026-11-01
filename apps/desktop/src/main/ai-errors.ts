@@ -1,22 +1,6 @@
-export type AiInfrastructureErrorCode =
-  | 'INVALID_CONFIG'
-  | 'INVALID_REQUEST'
-  | 'AUTHENTICATION'
-  | 'RATE_LIMIT'
-  | 'NETWORK'
-  | 'TIMEOUT'
-  | 'CANCELLED'
-  | 'HTTP_ERROR'
-  | 'PROTOCOL'
-  | 'TRUNCATED'
-  | 'RESPONSE_TOO_LARGE'
-  | 'SETTINGS_CORRUPT'
-  | 'SETTINGS_READ'
-  | 'SETTINGS_WRITE'
-  | 'PROTECTION_UNAVAILABLE'
-  | 'ENCRYPTION_FAILED'
-  | 'DECRYPTION_FAILED'
-  | 'KEY_MISSING';
+import type { AiInfrastructureErrorCode } from '../shared/ai-api';
+
+export type { AiInfrastructureErrorCode } from '../shared/ai-api';
 
 const messages: Record<AiInfrastructureErrorCode, string> = {
   INVALID_CONFIG: 'Invalid AI provider configuration.',

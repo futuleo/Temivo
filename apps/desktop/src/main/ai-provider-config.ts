@@ -1,13 +1,9 @@
 import { AiInfrastructureError } from './ai-errors';
+import type { AiProviderConfig } from '../shared/ai-api';
+
+export type { AiProviderConfig } from '../shared/ai-api';
 
 const maximumEndpointLength = 2048;
-
-export interface AiProviderConfig {
-  provider: 'openai-compatible' | 'anthropic';
-  /** API base URL, including any version prefix; not the operation URL. */
-  endpoint: string;
-  model: string;
-}
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

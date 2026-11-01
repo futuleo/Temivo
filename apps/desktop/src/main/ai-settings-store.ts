@@ -2,16 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { open, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 
+import type { AiSettingsSummary } from '../shared/ai-api';
 import { AiInfrastructureError } from './ai-errors';
 import type { AiKeyCodec } from './ai-key-protection';
 import { assertAiKey, isRecord, parseAiProviderConfig, sameAiDestination } from './ai-provider-config';
 import type { AiProviderConfig } from './ai-provider-config';
 
-export interface AiSettingsSummary {
-  config: AiProviderConfig | null;
-  /** Indicates an encrypted credential exists, not that it can currently be unlocked. */
-  hasKey: boolean;
-}
+export type { AiSettingsSummary } from '../shared/ai-api';
 
 interface StoredSettings {
   version: 1;
