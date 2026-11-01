@@ -4,6 +4,13 @@ Temivo is a desktop app for exploring and learning topics through AI-generated m
 link to a separate mind map; linked maps stay independent and can be detached. The repository is
 currently a scaffold — add product features in focused follow-up changes.
 
+## Product invariants
+
+- Maps have independent identities and lifecycles. A node may link to another map.
+  Detaching a link, removing its source node, or deleting its source map must not delete the target map.
+- Do not infer new product requirements from the technical scaffold. Confirm substantial behavior
+  changes and keep UI, AI-provider integration, and synchronization out of unrelated changes.
+
 ## Architecture
 
 pnpm workspaces monorepo:
@@ -40,6 +47,34 @@ A future mobile client will live in `apps/` with its own UI and platform integra
   requests, and the Content-Security-Policy in `src/renderer/index.html`.
 - Workspace packages must be bundled, not externalized, in main/preload (see
   `electron.vite.config.ts`).
+- Any future persistence belongs in `src/main`; never put SQL or a database driver in core,
+  preload, or renderer. Validate IPC inputs in main and return sanitized failures.
+
+## Secrets and configuration
+
+- Do not read, edit, search inside, or print real `.env` files, private keys, or credential files.
+  Do not dump process environments or interpolate secrets into commands, logs, or messages.
+- `.env.example` is the public configuration contract. Use empty placeholders, never real values.
+  Use `pnpm env:check` to check configuration; it reports declared variable names and status only
+  and is the permitted way for agents to check local config.
+  Users populate real secret values themselves.
+- The app currently requires no application environment variables. Do not invent required AI credentials
+  before a provider integration exists.
+- Keep provider credentials in Electron main. Never expose them through preload, `VITE_*` settings,
+  renderer bundles, or the maps database. Production credentials need platform-protected storage.
+- Hooks are accident-prevention guardrails, not a sandbox or complete shell security boundary.
+
+## Agent selection
+
+- Handle small tasks directly. Do not launch all agents for every change or let agents delegate
+  recursively.
+- `reviewer` (Opus): bounded, read-only review of substantial logic, persistence, IPC, or risky changes.
+- `designer` (Sonnet): scoped UI/UX work and accessibility, not architectural decisions.
+- `checks` (Haiku): mechanical validation and exact failure reporting; no autonomous fixes.
+- Keep complex implementation and ambiguous failures with the primary capable agent. Escalate from
+  a lightweight agent rather than repeating guesses.
+- Agent models are declared in `.github/agents/*.agent.md`. Availability depends on the host and
+  account; if a configured model is unavailable, report it and obtain an available alternative.
 
 ## Conventions
 
@@ -64,6 +99,7 @@ pnpm build       # build all packages (desktop output: apps/desktop/out)
 pnpm typecheck   # strict TypeScript checks for every package
 pnpm lint        # ESLint for the whole repository
 pnpm test        # Vitest tests for every package
+pnpm env:check   # configuration status, without printing values
 ```
 
 Before finishing a change, run `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`.
@@ -75,5 +111,6 @@ steps do this; see README). Do not disable the sandbox in code.
 ## Copilot hooks
 
 `.github/hooks/pre-tool-use.json` runs `.github/hooks/scripts/pre-tool-use.mjs` before each tool
-call. It denies edits to generated files and npm/yarn install commands. Keep hook scripts fast,
-dependency-free, and fail-open on unexpected input.
+call. It denies direct access to secret files, obvious environment-dumping commands, edits to
+generated files, and npm/yarn install commands. Keep hook scripts fast, dependency-free, and
+fail-open on unexpected input. Cover policy changes with the colocated Node.js tests.
