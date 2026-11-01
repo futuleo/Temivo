@@ -1,8 +1,18 @@
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
+import { MIND_MAP_CHANNELS } from '../shared/desktop-api';
 import type { DesktopApi } from '../shared/desktop-api';
 
 const api: DesktopApi = {
+  maps: {
+    list: () => ipcRenderer.invoke(MIND_MAP_CHANNELS.list),
+    get: (id) => ipcRenderer.invoke(MIND_MAP_CHANNELS.get, id),
+    save: (map) => ipcRenderer.invoke(MIND_MAP_CHANNELS.save, map),
+    delete: (id) => ipcRenderer.invoke(MIND_MAP_CHANNELS.delete, id),
+    getLinks: (sourceMapId) => ipcRenderer.invoke(MIND_MAP_CHANNELS.getLinks, sourceMapId),
+    link: (link) => ipcRenderer.invoke(MIND_MAP_CHANNELS.link, link),
+    unlink: (sourceMapId, sourceNodeId) => ipcRenderer.invoke(MIND_MAP_CHANNELS.unlink, sourceMapId, sourceNodeId),
+  },
   platform: process.platform,
   versions: {
     electron: process.versions.electron,
