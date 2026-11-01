@@ -1,10 +1,19 @@
 import type { MapLibrary, MapLink, MindMap, MindMapSummary } from '@temivo/core';
 
+import type { AiApi, AiErrorCode } from './ai-api';
+
+export { AI_CHANNELS } from './ai-api';
+export type {
+  AiApi, AiErrorCode, AiInfrastructureErrorCode, AiKeyAction,
+  AiProviderConfig, AiSettingsSummary, AiSettingsUpdate,
+} from './ai-api';
+
 /**
  * API exposed by the preload script to the renderer as `window.temivo`.
  * Keep it small and explicit: never expose Electron or Node.js objects directly.
  */
 export interface DesktopApi {
+  readonly ai: AiApi;
   readonly maps: MindMapsApi;
   readonly platform: string;
   readonly versions: {
@@ -36,7 +45,7 @@ export type DesktopResult<T> =
   | {
     readonly ok: false;
     readonly error: {
-      readonly code: 'INVALID_INPUT' | 'STORAGE_ERROR' | 'FORBIDDEN' | 'VERSION_CONFLICT' | 'LIBRARY_REQUIRED';
+      readonly code: 'INVALID_INPUT' | 'STORAGE_ERROR' | 'FORBIDDEN' | 'VERSION_CONFLICT' | 'LIBRARY_REQUIRED' | AiErrorCode;
       readonly message: string;
     };
   };
