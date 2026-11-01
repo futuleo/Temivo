@@ -12,7 +12,9 @@
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
-    "test": "pnpm -r --if-present test"
+    "test": "pnpm test:tooling && pnpm -r --if-present test",
+    "test:tooling": "node --test scripts/*.test.mjs .github/hooks/scripts/*.test.mjs",
+    "env:check": "node scripts/env-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
