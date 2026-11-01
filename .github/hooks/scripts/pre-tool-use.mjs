@@ -45,7 +45,7 @@ const args = parseArgs(input?.toolArgs);
 const cwd = typeof input?.cwd === 'string' ? input.cwd : process.cwd();
 
 if (['edit', 'create', 'str_replace_editor', 'apply_patch'].includes(toolName) && typeof args.path === 'string') {
-  const filePath = (isAbsolute(args.path) ? relative(cwd, args.path) : args.path).replaceAll('\\', '/');
+  const filePath = relative(cwd, isAbsolute(args.path) ? args.path : `${cwd}/${args.path}`).replaceAll('\\', '/');
   if (GENERATED_PATH.test(filePath)) {
     deny(
       `${filePath} is generated. Edit package.json and run \`pnpm install\`, or change sources and rebuild, instead of editing it directly.`,
