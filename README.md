@@ -269,18 +269,81 @@ Agents must use the helper instead of reading real environment files. The pre-to
 blocks direct secret-file paths, common shell secret reads, and obvious environment dumps.
 It is a guardrail, not a sandbox: arbitrary shell code or unrecognized tools cannot be fully
 secured by path and command matching. Only `.env.example` may be edited as a public template.
-Keep AI credentials out of `VITE_*` and the maps database. Settings accepts only a user-entered,
-write-only key update; stored keys/ciphertext must never be returned through renderer/preload APIs.
-AI provider infrastructure is described below.
+Keep AI credentials out of `VITE_*` and the maps database. Stored credentials/ciphertext are never
+returned through renderer/preload read APIs; user-entered replacement keys pass through a
+write-only settings action.
 
-### AI infrastructure
+### Backend AI integration
 
 Main-only modules in `apps/desktop/src/main/ai-*` provide bounded JSON transport and protected
-settings storage. The renderer and preload use the typed AI contract in `src/shared/ai-api.ts`.
-The complete main generation service is a separate integration gate from these infrastructure
-modules. Transport/settings primitives alone neither modify maps nor validate domain output;
-the renderer owns core plan/application and versioned library saves. Live application/provider
-acceptance is not implied by this infrastructure or the UI.
+settings storage, now wired to main startup and the typed preload bridge. The backend returns
+validated generation **proposals**, never automatic SQLite writes. The renderer's generation and
+settings slices use this bridge and own core plan/application plus versioned library saves.
+Neither this backend nor its UI implies actual application or live-provider acceptance.
+
+`window.temivo.ai` uses four fixed channels with the same live owned-window/main-frame trust
+predicate as maps. Authorization precedes any repository, settings or provider access. Plain
+DTOs and channels live in `src/shared/ai-api.ts` and are re-exported by `desktop-api.ts`; the
+renderer never imports main modules.
+
+| Method | Contract |
+| --- | --- |
+| `getSettings()` | `DesktopResult<{ config: AiProviderConfig \| null, hasKey: boolean }>`; reads metadata only, without unlocking. |
+| `updateSettings({ config, keyAction })` | Returns the same summary. `keyAction` is explicitly `{ kind: 'keep' }`, `{ kind: 'remove' }`, or `{ kind: 'replace', key: string }`. A replacement is write-only. |
+| `generate(request: GenerationRequest)` | Returns `DesktopResult<readonly GenerationChange[]>`; only validated proposals, no library, key, job object or approval RPC. |
+| `cancelGeneration(mapId, sequence)` | Returns `DesktopResult<null>`; idempotently cancels only this window's matching request, including cancellation arriving before dispatch. |
+
+Generation ownership and concurrency:
+
+1. Renderer calls core `beginGeneration` on its current library, **CAS-saves the begun library**,
+   then calls `ai.generate(request)`. The visible storage revision advances before the long request;
+   normal user edits remain possible while waiting.
+2. Main structurally validates bounded unknown input, loads authoritative storage, and calls core
+   `planGeneration(current, request, [])`. Exact token, canonical snapshot, topic, context and
+   existing-node checks must pass **before** key decryption or provider access.
+3. The provider prompt contains only the validated topic, selected context/mode, anchor and
+   in-scope existing nodes. It never includes `expectedSnapshot`, the full library, other worlds,
+   retired identities, storage paths or credentials.
+4. Provider JSON must be exactly `{ changes: [...] }`. Upserts use
+   `{ kind: 'upsert', target, parent, text, description }`; removals use
+   `{ kind: 'remove', target }`. References are explicitly `{ existing: 'stable-id' }` or
+   `{ new: 'local-name' }`; `parent` can also be `null`. New local names match
+   `[A-Za-z][A-Za-z0-9_-]{0,63}` and must each be declared by exactly one upsert. Forward references
+   are supported. Main assigns fresh platform UUIDs; model-local names never become node IDs.
+   Existing targets must belong to this anchor/depth snapshot. Invalid refs, collisions, cycles,
+   invalid hierarchy/depth and unsupported shapes fail explicitly. Omission **never removes**
+   saved content; an explicit empty `changes` is valid, malformed data is not empty success.
+5. After the response, main reloads the latest library and uses core validation again. Concurrent
+   same-map changes or newer generation tokens fail `STALE_GENERATION`. Independent-world edits
+   remain independent. Main does not save or apply proposals.
+6. Renderer re-plans/applies to its **latest** local state and CAS-saves safe automatic changes.
+   Manual/edited/linked content stays protected by core conflict proposals. Explicit selection via
+   `approveGenerationConflicts` and another CAS save is required to approve those changes. Handle
+   `VERSION_CONFLICT` explicitly; never blindly retry an old whole-library snapshot.
+
+Requests are limited to 2048 snapshot nodes, 1024-character identities, 16000-character text fields,
+an 8-Mi-character canonical snapshot and the transport's 64000-character combined system/prompt
+limit. Replies accept at most 256 changes, with 16000 characters per text/description and 64000
+aggregate content characters, additionally bounded by the transport byte limit. Limits reject,
+never silently truncate. Core still owns hierarchy, relative depth, expand mode and manual-content
+protection; lowering depth does not delete saved descendants.
+
+Newer validated requests supersede older active work for the same map. Explicit cancellation,
+owner window/webContents destruction, renderer-process loss and app shutdown abort pending work
+and discard late results even if a transport ignores abort. Active listeners are removed on every
+exit. There are at most eight active generations per window and 128 distinct map replay/cancellation
+guards per window lifetime; exhaustion returns `REQUEST_LIMIT` rather than evicting safety guards.
+Close/reopen the window to release that bounded history. No jobs/events/polling framework exists.
+Quit cancels requests before closing storage. Startup and metadata listing do not call key
+protection or providers.
+
+All methods return explicit `DesktopResult` failures. In addition to common `FORBIDDEN`,
+`INVALID_INPUT` and `STORAGE_ERROR`, AI codes include `INVALID_CONFIG`, `INVALID_REQUEST`,
+`STALE_GENERATION`, `REQUEST_LIMIT`, `KEY_MISSING`, `PROTECTION_UNAVAILABLE`,
+`ENCRYPTION_FAILED`, `DECRYPTION_FAILED`, `SETTINGS_READ`, `SETTINGS_WRITE`, `SETTINGS_CORRUPT`,
+`AUTHENTICATION`, `RATE_LIMIT`, `NETWORK`, `TIMEOUT`, `CANCELLED`, `HTTP_ERROR`, `PROTOCOL`,
+`TRUNCATED`, `RESPONSE_TOO_LARGE` and `AI_ERROR`. Messages/logs at the AI boundary use fixed
+nonsecret text, never raw provider bodies or underlying exceptions.
 
 `AiProviderTransport` takes an injected fetch function and an explicit provider, API base URL,
 user-selected model, credential, and private prompt. The `openai-compatible` adapter appends
@@ -292,8 +355,9 @@ Non-loopback endpoints require HTTPS; HTTP is allowed only for literal `127.0.0.
 URL credentials, queries, fragments, redirects, retries, and provider fallback are disallowed.
 Requests default to a 30-second deadline and a 256-KiB streamed response limit. Only complete text
 responses containing valid JSON are accepted; tool calls, refusals, malformed replies, and
-provider-reported truncation fail explicitly. Returned JSON is still `unknown`, not validated
-domain data. Errors contain fixed codes/messages, never raw provider bodies or exception causes.
+provider-reported truncation fail explicitly. The transport returns `unknown`; the generation
+decoder and core validate it before IPC success. Errors contain fixed codes/messages, never raw
+provider bodies or exception causes.
 
 `AiSettingsStore` takes an explicit main-private file path and an injected key codec. Use one
 instance per file. Updates serialize within that instance and atomically replace the file via a

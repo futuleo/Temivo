@@ -1,13 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { app, BrowserWindow, dialog, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, session, shell } from 'electron';
 
+import { registerAiIpc } from './ai-ipc';
+import { createAiKeyCodec } from './ai-key-protection';
+import { AiProviderTransport } from './ai-provider-transport';
+import { AiSettingsStore } from './ai-settings-store';
 import { registerMindMapIpc } from './mind-map-ipc';
 import { SqliteMindMapRepository } from './mind-map-repository';
 
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'];
 const ownedWindows = new Set<BrowserWindow>();
+let ai: ReturnType<typeof registerAiIpc> | undefined;
 
 function createMainWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -24,8 +30,12 @@ function createMainWindow(): void {
       webSecurity: true,
     },
   });
+  const contents = mainWindow.webContents;
   ownedWindows.add(mainWindow);
-  mainWindow.once('closed', () => ownedWindows.delete(mainWindow));
+  mainWindow.once('closed', () => {
+    ownedWindows.delete(mainWindow);
+    ai?.cancelOwner(contents);
+  });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
@@ -53,11 +63,22 @@ void app.whenReady().then(() => {
   const dataDirectory = app.getPath('userData');
   mkdirSync(dataDirectory, { recursive: true });
   const repository = new SqliteMindMapRepository(join(dataDirectory, 'temivo.sqlite'));
-  app.once('quit', () => repository.close());
-  registerMindMapIpc(repository, (event) =>
+  const isTrustedSender: Parameters<typeof registerMindMapIpc>[1] = (event) =>
+    !event.sender.isDestroyed() &&
     event.senderFrame !== null && event.senderFrame === event.sender.mainFrame &&
-    [...ownedWindows].some((window) => window.webContents === event.sender),
-  );
+    [...ownedWindows].some((window) => !window.isDestroyed() && window.webContents === event.sender);
+  registerMindMapIpc(repository, isTrustedSender);
+  ai = registerAiIpc({
+    repository,
+    settings: new AiSettingsStore(join(dataDirectory, 'ai-settings.json'), createAiKeyCodec(safeStorage, process.platform)),
+    transport: new AiProviderTransport({ fetch: globalThis.fetch }),
+    createId: randomUUID,
+  }, isTrustedSender);
+  app.once('before-quit', () => ai?.dispose());
+  app.once('quit', () => {
+    ai?.dispose();
+    repository.close();
+  });
 
   // The app does not need camera, microphone, notifications, etc. yet.
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
