@@ -81,6 +81,81 @@ no editor UI exists yet. Node IDs are scoped to a map and nodes have a nullable 
 unfinished text are allowed, while duplicate IDs, missing parents, and parent cycles are rejected.
 A link targets a separate map; maps stay independent of their links.
 
+#### Editor domain (phase 1)
+
+The richer product state is **`MapDocument` inside `MapLibrary`**, not an extension of the
+persisted `MindMap` DTO. A document wraps the basic map plus per-node descriptions, generation
+context, provenance/baselines, revisions and retired node identities. A library contains independent
+documents, links, flat collections and retired map identities. `assertMapDocument` and
+`assertMapLibrary` validate complete snapshots. All public APIs are exported from `@temivo/core`.
+
+**This state is not persisted yet.** The current `MindMapRepository`, SQLite adapter and maps IPC
+still support only the original basic model. `createMapDocument(legacyMap)` explicitly imports a
+basic map as user-authored content; there is no rich-state save port or lossy export adapter.
+Do not save `document.map` and assume its sibling metadata, collections or generation state were
+saved. A later phase must add migrations/adapters before any UI relies on rich-state durability.
+
+Operations return immutable snapshots and never mutate their inputs; callers must retain the
+returned library and treat readonly values as immutable (core does not deep-freeze them at runtime).
+IDs are supplied by the caller, with node IDs scoped per map. Deleted map/node IDs are retired
+within that library/document so delayed work cannot resurrect another object under the same ID.
+Invalid inputs, missing references and invalid hierarchies throw `InvalidMindMapError`.
+
+| Surface | Contract |
+| --- | --- |
+| Creation/editing | `createMapDocument`, `createTopicMap`, `createMapLibrary`, `addMap`, `renameMap`, `addNode`, `editNode`, `reparentNode`, `removeNode`, `removeMap`. Empty maps/text and forests remain valid. `removeNode` is an explicit **subtree** deletion. |
+| Node fields | `description` plus `context: { instructions, detail, depth }`; defaults are empty instructions/description, `brief` detail and depth `1`. `editNode` replaces supplied fields/context and records user edits even if the value is unchanged or later reverted. |
+| Collections | `createCollection`, `renameCollection`, `removeCollection`, `addCollectionMember`, `removeCollectionMember`. A map may appear in multiple collections; removing membership/collection never deletes a map. Duplicate membership is idempotent. |
+| Links | `linkMaps` replaces only that source node's outgoing link; `unlinkMap` detaches it. Source deletion never deletes targets. Target deletion cleans incoming links and collection references, not source maps. Link changes record edits on anchors and invalidate in-flight generation in the source map. |
+| Navigation | `startNavigation`, `followMapLink`, `navigateBack`, `navigateToBreadcrumb` retain the actual traversal path, including cycles. Depth is the zero-based path index, not ownership. Historical breadcrumbs survive unlink/source-node removal; `reconcileNavigation` explicitly truncates at a deleted map, returning `null` if the starting map was deleted. |
+| Overview | `projectLinkedWorlds(library, rootMapId, expandedMapIds)` emits depth-first flat rows with parent-row references. Expansion is by map ID. Cycles/shared targets are terminal reference rows; each map expands at most once. All maps remain independent library entries. |
+
+#### Generation contract (no provider execution)
+
+`beginGeneration(library, mapId, anchorNodeId, mode)` returns an updated library and a request
+containing the selected topic, editable context, in-scope saved node snapshots, a sequence and
+snapshot guard. Retain the new library **before** dispatching work outside core. Only the latest
+request for a map can apply. Any intervening map edit (including context, hierarchy or source links)
+invalidates it; unrelated map edits and collection organization do not.
+
+Generation depth is a positive safe integer **relative to the selected node**: `1` means immediate
+children, `2` adds one more node level. It is unrelated to navigation between independent worlds.
+Reducing depth only changes the requested scope: it never removes saved descendants, even pristine
+AI content. Existing deeper nodes remain available on expansion. Visual collapse state belongs to
+the future renderer. No arbitrary product depth cap or layout rules are imposed by core.
+
+The default `refresh` mode accepts explicit node-ID patches:
+`{ kind: 'upsert', nodeId, parentId, text, description }` or `{ kind: 'remove', nodeId }`.
+An omitted node is **always retained**; a shorter response is never interpreted as a deletion diff.
+Changes outside the selected scope/depth, duplicate/reused IDs, missing parents, cycles, and
+removing/reparenting the anchor are rejected. Reparented AI content from this anchor can still be
+proposed back into scope, but user reparenting cannot be silently undone.
+
+Use `expand` mode for lazy loading: the request includes existing saved children for reuse, and
+patches may only add missing identities or repeat unchanged content. Changing/removing existing
+content is rejected. Identity/semantic matching is the caller/provider adapter's responsibility;
+core never guesses that two phrases identify the same node.
+
+`planGeneration(library, request, changes)` separates `automaticNodeIds` from reasoned `conflicts`.
+`applyGenerationPlan` revalidates/recomputes that classification, applies safe work immediately and
+returns `{ library, pendingConflicts }`. Only unchanged AI nodes from the same anchor scope can be
+automatically rewritten. User-authored/edited nodes, other generation scopes and linked anchors
+remain proposals; equal-valued patches are no-ops and never clear user provenance. Moving/deleting
+an AI ancestor with protected descendants also requires a proposal. Generation removal deletes
+only the named node, promoting surviving children to the nearest surviving parent, never silently
+deleting a subtree or an independent linked world. Removal patches cannot target deeper stored
+content outside the current requested depth; explicit editor deletion remains a separate action.
+
+`approveGenerationConflicts(library, pendingConflicts, selectedNodeIds)` applies an explicit batch,
+rechecking the current hierarchy, depth and snapshot. Dependent changes may need approval together.
+The receipt is single-use: accepting a subset invalidates the remainder, so discard it or regenerate
+against the new snapshot. Discarding a receipt is rejection; there is no required confirmation step
+for safe automatic work. Approved user content stays user-protected for future generations.
+`StaleGenerationError` (an `InvalidMindMapError`) rejects old results, out-of-order work, replays or
+stale approvals rather than rebasing over intervening edits. Guards include exact canonical content
+as well as revisions, distinguishing divergent immutable snapshots with equal counters; they are
+optimistic concurrency data, not security credentials.
+
 ### Local persistence
 
 The Electron main process stores maps in `temivo.sqlite` under Electron's per-user `userData`
