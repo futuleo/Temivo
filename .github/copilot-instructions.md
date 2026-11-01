@@ -1,8 +1,10 @@
 # Copilot instructions for Temivo
 
-Temivo is a desktop app for exploring and learning topics through AI-generated mind maps. A node can
-link to a separate mind map; linked maps stay independent and can be detached. The repository is
-currently a foundation with SQLite persistence — add UI and AI features in focused follow-up changes.
+Temivo is an app for AI-assisted exploration and learning through linked mind maps. A node can
+link to a separate mind map; linked maps stay independent and can be detached. The repository is a
+monorepo with a platform-independent shared core; the desktop app is the first client and initial
+release. The repository is currently a foundation with SQLite persistence — add UI and AI features
+in focused follow-up changes.
 
 ## Product invariants
 

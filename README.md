@@ -1,7 +1,9 @@
 # Temivo
 
-Temivo is a desktop app for exploring and learning topics through AI-generated mind maps. Nodes can
-lead to separate linked maps, which stay independent and can be detached.
+Temivo is an app for AI-assisted exploration and learning through linked mind maps. Nodes can
+lead to separate linked maps, which stay independent and can be detached. The repository is a
+monorepo with a platform-independent shared core; the desktop app is the first client and the
+initial release, and other clients can reuse the core later.
 
 > This repository contains the project foundation: a shared domain model, SQLite persistence, and
 > an Electron desktop app still showing a placeholder screen. The map editor and AI integration
