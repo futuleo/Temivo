@@ -1,3 +1,5 @@
+import type { MapLink, MindMap, MindMapSummary } from '@temivo/core';
+
 /**
  * API exposed by the preload script to the renderer as `window.temivo`.
  * Keep it small and explicit: never expose Electron or Node.js objects directly.
@@ -40,4 +42,3 @@ export interface MindMapsApi {
   link(link: MapLink): Promise<DesktopResult<null>>;
   unlink(sourceMapId: string, sourceNodeId: string): Promise<DesktopResult<null>>;
 }
-import type { MapLink, MindMap, MindMapSummary } from '@temivo/core';

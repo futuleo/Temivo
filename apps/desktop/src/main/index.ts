@@ -50,7 +50,7 @@ void app.whenReady().then(() => {
   const dataDirectory = app.getPath('userData');
   mkdirSync(dataDirectory, { recursive: true });
   const repository = new SqliteMindMapRepository(join(dataDirectory, 'temivo.sqlite'));
-  app.once('will-quit', () => repository.close());
+  app.once('quit', () => repository.close());
   registerMindMapIpc(repository, (event) =>
     event.senderFrame === event.sender.mainFrame && BrowserWindow.fromWebContents(event.sender) !== null,
   );
@@ -70,8 +70,7 @@ void app.whenReady().then(() => {
 }).catch((error: unknown) => {
   console.error('Unable to initialize Temivo.', error);
   dialog.showErrorBox('Unable to start Temivo', 'Local storage could not be initialized. Your maps were not reset.');
-  process.exitCode = 1;
-  app.quit();
+  app.exit(1);
 });
 
 app.on('window-all-closed', () => {
