@@ -92,7 +92,7 @@ export class SqliteMindMapRepository implements LibraryRepository {
           let library: MapLibrary;
           if (version === 0) {
             if (this.database.prepare(
-              "SELECT name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'",
+              "SELECT name FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'",
             ).all().length > 0) {
               throw new Error('An unversioned nonempty maps database cannot be initialized.');
             }

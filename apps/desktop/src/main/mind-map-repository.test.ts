@@ -384,6 +384,18 @@ describe('SQLite library repository', () => {
     }
   });
 
+  it('refuses an unversioned sqliteData user table without changing its schema or rows', () => {
+    const path = temporaryDatabasePath();
+    const database = inspect(path);
+    database.exec("CREATE TABLE sqliteData(value TEXT); INSERT INTO sqliteData VALUES ('keep');");
+    const schema = database.prepare('SELECT * FROM sqlite_schema ORDER BY name').all();
+    expect(() => openRepository(path)).toThrow('unversioned nonempty');
+    expect(database.prepare('PRAGMA user_version').get()?.['user_version']).toBe(0);
+    expect(database.prepare('SELECT value FROM sqliteData').all()).toEqual([{ value: 'keep' }]);
+    expect(database.prepare("SELECT name FROM sqlite_schema WHERE name = 'map_library'").get()).toBeUndefined();
+    expect(database.prepare('SELECT * FROM sqlite_schema ORDER BY name').all()).toEqual(schema);
+  });
+
   it.each(['json', 'metadata', 'collections', 'missing-row', 'revision'])('treats corrupt persisted %s as storage failure for every read and CAS', async (kind) => {
     const path = temporaryDatabasePath();
     const repository = openRepository(path);
