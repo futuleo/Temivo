@@ -2,12 +2,14 @@
 
 Temivo is a desktop app for exploring and learning topics through AI-generated mind maps. A node can
 link to a separate mind map; linked maps stay independent and can be detached. The repository is
-currently a scaffold — add product features in focused follow-up changes.
+currently a foundation with SQLite persistence — add UI and AI features in focused follow-up changes.
 
 ## Product invariants
 
 - Maps have independent identities and lifecycles. A node may link to another map.
   Detaching a link, removing its source node, or deleting its source map must not delete the target map.
+- A source node has at most one outgoing map link. Deleting a target removes incoming links,
+  not their source maps.
 - Do not infer new product requirements from the technical scaffold. Confirm substantial behavior
   changes and keep UI, AI-provider integration, and synchronization out of unrelated changes.
 
@@ -47,8 +49,12 @@ A future mobile client will live in `apps/` with its own UI and platform integra
   requests, and the Content-Security-Policy in `src/renderer/index.html`.
 - Workspace packages must be bundled, not externalized, in main/preload (see
   `electron.vite.config.ts`).
-- Any future persistence belongs in `src/main`; never put SQL or a database driver in core,
-  preload, or renderer. Validate IPC inputs in main and return sanitized failures.
+- SQLite belongs in `src/main`, using `node:sqlite` at `app.getPath('userData')/temivo.sqlite`;
+  never put SQL or a database driver in core, preload, or renderer. Keep schema changes versioned
+  and transactional; never reset an unsupported database.
+- Expose map operations only through the typed `window.temivo.maps` API with fixed IPC channels.
+  Authorize senders and validate inputs in main; return explicit, sanitized failures rather than
+  raw database errors. Do not expose database paths or credentials.
 
 ## Secrets and configuration
 

@@ -3,8 +3,9 @@
 Temivo is a desktop app for exploring and learning topics through AI-generated mind maps. Nodes can
 lead to separate linked maps, which stay independent and can be detached.
 
-> This repository currently contains the project foundation: a pnpm workspace with a shared core
-> package and an Electron desktop app showing a placeholder screen.
+> This repository contains the project foundation: a shared domain model, SQLite persistence, and
+> an Electron desktop app still showing a placeholder screen. The map editor and AI integration
+> are follow-up features.
 
 ## Requirements
 
@@ -73,10 +74,30 @@ The core package exports its TypeScript sources and is bundled by each consuming
 
 Core exports the map/node/link types, validation helpers (`assertMindMap`, `assertMapLink`,
 `assertMapId`, `InvalidMindMapError`), and the async `MindMapRepository` port. The port only
-describes persistence; core contains no storage implementation, and no SQLite adapter or editor UI
-exists yet. Node IDs are scoped to a map and nodes have a nullable parent ID. Empty maps and
+describes persistence; core contains no storage implementation. The desktop supplies a SQLite adapter;
+no editor UI exists yet. Node IDs are scoped to a map and nodes have a nullable parent ID. Empty maps and
 unfinished text are allowed, while duplicate IDs, missing parents, and parent cycles are rejected.
 A link targets a separate map; maps stay independent of their links.
+
+### Local persistence
+
+The Electron main process stores maps in `temivo.sqlite` under Electron's per-user `userData`
+directory, not the checkout. It uses Node's built-in `node:sqlite` (also available in the pinned
+Electron runtime), with foreign keys, WAL journaling, transactional map saves, and versioned,
+transactional schema migrations. A database from a newer schema version is rejected, never reset.
+Startup failures are reported without deleting or replacing existing storage.
+
+The desktop implements core's `MindMapRepository` interface; a future mobile app can supply its
+own adapter. Links are separate rows. A source node has at most one outgoing map link; linking
+again replaces that link. Detaching, removing the source node, or deleting the source map does
+not delete the target. Deleting a target removes incoming links, not their source maps.
+
+Renderer code uses `window.temivo.maps` through the preload bridge: `list`, `get`, `save`, `delete`,
+`getLinks`, `link`, and `unlink`. Results are `{ ok: true, value }` or
+`{ ok: false, error: { code, message } }`; callers must handle failures. Failure codes are
+`INVALID_INPUT`, `FORBIDDEN`, and `STORAGE_ERROR`. Main validates inputs, rejects untrusted frames,
+and keeps raw database errors out of IPC responses. No database path, raw IPC, Node.js objects,
+or credentials are exposed to the renderer.
 
 ### Configuration and secrets
 
@@ -115,7 +136,7 @@ model selection support depend on the Copilot host and account. If a model is un
 select an available alternative explicitly rather than assuming a silent fallback.
 
 `pnpm test` includes dependency-free Node.js tests for hooks and the configuration helper,
-and the workspace Vitest tests.
+Vitest domain tests, SQLite persistence tests, and main/preload IPC contract tests.
 
 ### Desktop security
 
