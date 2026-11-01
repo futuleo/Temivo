@@ -3,8 +3,8 @@
 Temivo is an app for AI-assisted exploration and learning through linked mind maps. A node can
 link to a separate mind map; linked maps stay independent and can be detached. The repository is a
 monorepo with a platform-independent shared core; the desktop app is the first client and initial
-release. The repository is currently a foundation with SQLite persistence — add UI and AI features
-in focused follow-up changes.
+release. The desktop has a map/collections library, node editor, linked-world navigation, provider
+settings and AI proposal UI over a shared domain model and versioned SQLite persistence.
 
 ## Product invariants
 
@@ -12,6 +12,13 @@ in focused follow-up changes.
   Detaching a link, removing its source node, or deleting its source map must not delete the target map.
 - A source node has at most one outgoing map link. Deleting a target removes incoming links,
   not their source maps.
+- Collections are flat and many-to-many. Deleting a collection or membership never deletes maps.
+  Breadcrumbs and Back represent the actual visited-world path, not a unique parent/ownership tree.
+- Generation depth is relative to the selected node, defaulting to `1`. Reducing depth only folds
+  saved descendants; deletion is a separate explicit action, and linked worlds stay independent.
+- Only pristine AI nodes from the same anchor may be rewritten automatically. Manual/edited nodes
+  receive explicit proposals. Reject stale results/approvals and preserve unapplied user drafts
+  during asynchronous work, failures and navigation.
 - Do not infer new product requirements from the technical scaffold. Confirm substantial behavior
   changes and keep UI, AI-provider integration, and synchronization out of unrelated changes.
 
@@ -57,6 +64,26 @@ A future mobile client will live in `apps/` with its own UI and platform integra
 - Expose map operations only through the typed `window.temivo.maps` API with fixed IPC channels.
   Authorize senders and validate inputs in main; return explicit, sanitized failures rather than
   raw database errors. Do not expose database paths or credentials.
+- Load/save complete `MapLibrary` snapshots through `maps.loadLibrary()` and
+  `maps.saveLibrary(library, expectedRevision)`. The storage CAS revision is separate from
+  document/node revisions. Never save rich state through legacy basic-map writes. Preserve local
+  work and drafts on `VERSION_CONFLICT`; explicitly reload/reconcile rather than retrying an old
+  snapshot with a newer revision or silently replacing user content.
+- The renderer owns core `beginGeneration`, CAS-saving its library before `ai.generate`, then
+  planning/applying against the latest local library and CAS-saving the result. Main returns
+  validated changes through `window.temivo.ai`, not hidden library writes. Conflict approval uses
+  the reviewed core APIs and explicit user selection.
+
+### Renderer structure
+
+FSD applies only to `apps/desktop/src/renderer/src`: `app` owns bridge adapters/orchestration and
+session state; `pages` composes library/world/settings screens; `widgets` provides navigation and
+linked-world overview; `features` contains editing, world links, proposal review and provider forms;
+`entities/map` holds map presentation/form drafts; `shared/ui` holds reusable controls/dialogs.
+Import downward through these layers, keep same-layer slices isolated, and use public slice indexes
+for cross-slice imports. Introduce no unused layers or duplicate domain models. Domain rules and
+immutable map/generation/collection/navigation operations remain in `@temivo/core`, imported from
+its package root. The isolated renderer architecture test checks these boundaries.
 
 ## Secrets and configuration
 
@@ -66,10 +93,13 @@ A future mobile client will live in `apps/` with its own UI and platform integra
   Use `pnpm env:check` to check configuration; it reports declared variable names and status only
   and is the permitted way for agents to check local config.
   Users populate real secret values themselves.
-- The app currently requires no application environment variables. Do not invent required AI credentials
-  before a provider integration exists.
-- Keep provider credentials in Electron main. Never expose them through preload, `VITE_*` settings,
-  renderer bundles, or the maps database. Production credentials need platform-protected storage.
+- The app requires no application environment variables. Configure OpenAI-compatible (including
+  DeepSeek) or native Anthropic through Settings with an explicit API base URL and model ID.
+  Do not invent a model, endpoint, working AI fallback or required environment credential.
+- Provider keys use lazy, platform-protected storage in Electron main. Settings may submit a new
+  user-entered key only as a write-only update; stored keys/ciphertext must never be returned or
+  rendered. Never put keys in `VITE_*`, renderer bundles, environment configuration or the maps
+  database. Missing/failed AI configuration must not block local editing and saving.
 - Hooks are accident-prevention guardrails, not a sandbox or complete shell security boundary.
 
 ## Agent selection
