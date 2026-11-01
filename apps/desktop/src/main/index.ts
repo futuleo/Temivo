@@ -1,6 +1,10 @@
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { app, BrowserWindow, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, session, shell } from 'electron';
+
+import { registerMindMapIpc } from './mind-map-ipc';
+import { SqliteMindMapRepository } from './mind-map-repository';
 
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'];
 
@@ -43,6 +47,14 @@ function createMainWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  const dataDirectory = app.getPath('userData');
+  mkdirSync(dataDirectory, { recursive: true });
+  const repository = new SqliteMindMapRepository(join(dataDirectory, 'temivo.sqlite'));
+  app.once('will-quit', () => repository.close());
+  registerMindMapIpc(repository, (event) =>
+    event.senderFrame === event.sender.mainFrame && BrowserWindow.fromWebContents(event.sender) !== null,
+  );
+
   // The app does not need camera, microphone, notifications, etc. yet.
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
@@ -55,6 +67,11 @@ void app.whenReady().then(() => {
       createMainWindow();
     }
   });
+}).catch((error: unknown) => {
+  console.error('Unable to initialize Temivo.', error);
+  dialog.showErrorBox('Unable to start Temivo', 'Local storage could not be initialized. Your maps were not reset.');
+  process.exitCode = 1;
+  app.quit();
 });
 
 app.on('window-all-closed', () => {
