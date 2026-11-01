@@ -7,7 +7,7 @@ initial release, and other clients can reuse the core later.
 
 > The desktop includes a local map library, flat collections, a node editor and independent linked
 > worlds over a shared domain model and versioned SQLite persistence. Provider settings and AI
-> proposal UI are built against explicit ports; their real bridge integration is a separate step.
+> proposal UI use typed main-process bridges, with no renderer networking or fixture AI.
 > Actual application and live-provider acceptance remain pending the user's permission.
 
 ## Requirements
@@ -185,9 +185,25 @@ available in All Maps regardless of how it was reached.
 Node drafts are retained while navigating, during asynchronous generation/saves, and after
 failures. Draft recovery is visible below the current page, including text from a deleted node.
 Drafts are **session-only** until applied: do not close the app with unapplied edits. The renderer
-registers a close guard for pending local work. A failed CAS never swaps in remote data or retries a stale snapshot with
-a newer revision. Explicitly reloading retains local node fields as drafts, but requires confirming
+registers a close guard for pending local work. A failed CAS never swaps in remote data or retries a
+stale snapshot with a newer revision. Explicitly reloading retains local node fields as drafts, but requires confirming
 the loss of unsaved structural changes, titles, links and collection changes.
+
+Settings offers OpenAI-compatible (including DeepSeek) and native Anthropic protocols. The user
+enters an explicit API **base** URL, model ID and optional write-only key update. No model or
+endpoint is invented. Metadata-only settings reads never populate a key field; successful writes
+clear only the submitted key, preserving newer typing. Saving settings sends no provider request.
+The key badge means stored ciphertext exists, not that it was unlocked or tested. Missing/failed
+AI configuration does not block local editing.
+
+The renderer owns `beginGeneration` -> CAS-save -> `ai.generate` -> core plan/application against
+the latest local library -> CAS-save. Main returns changes, not a secretly persisted replacement
+library. Fresh untouched AI content can update automatically; protected changes appear as explicit
+before/after proposals with selectable approval. If an automatic response would affect a newly
+typed node draft or structurally alter its ancestry, that response is rejected without changing
+saved content; apply/reset the draft and regenerate to obtain protected proposals. Unchanged
+saved expansion content is reused. Canceling ignores late responses, and stale generations or
+approvals never rebase over newer work. Proposal receipts and form drafts are session-only.
 
 Renderer verification uses injected callback/IPC fixtures, pure state tests and React server
 rendering. These checks do not start Electron, a browser/dev server, sockets, real provider requests,
@@ -253,15 +269,18 @@ Agents must use the helper instead of reading real environment files. The pre-to
 blocks direct secret-file paths, common shell secret reads, and obvious environment dumps.
 It is a guardrail, not a sandbox: arbitrary shell code or unrecognized tools cannot be fully
 secured by path and command matching. Only `.env.example` may be edited as a public template.
-Keep AI credentials out of `VITE_*`, renderer/preload APIs, and any local database.
-AI provider infrastructure is described below; it is not connected to the application yet.
+Keep AI credentials out of `VITE_*` and the maps database. Settings accepts only a user-entered,
+write-only key update; stored keys/ciphertext must never be returned through renderer/preload APIs.
+AI provider infrastructure is described below.
 
-### AI infrastructure (not yet integrated)
+### AI infrastructure
 
 Main-only modules in `apps/desktop/src/main/ai-*` provide bounded JSON transport and protected
-settings storage. They are intentionally **not wired to startup, IPC, preload, core, SQLite, or
-the UI**. They do not constitute a working generation feature; approved domain-output validation,
-application of results, and provider/settings UI are still pending.
+settings storage. The renderer and preload use the typed AI contract in `src/shared/ai-api.ts`.
+The complete main generation service is a separate integration gate from these infrastructure
+modules. Transport/settings primitives alone neither modify maps nor validate domain output;
+the renderer owns core plan/application and versioned library saves. Live application/provider
+acceptance is not implied by this infrastructure or the UI.
 
 `AiProviderTransport` takes an injected fetch function and an explicit provider, API base URL,
 user-selected model, credential, and private prompt. The `openai-compatible` adapter appends

@@ -1,20 +1,14 @@
 import type { ProviderFields } from '../features/provider-settings';
-
-type ConnectionFields = Pick<ProviderFields, 'provider' | 'endpoint' | 'model'>;
-
-export interface SettingsSummary {
-  readonly connection: ConnectionFields | null;
-  readonly hasStoredKey: boolean;
-}
+import type { AiSettingsSummary } from '../../../shared/desktop-api';
 
 export interface SettingsPorts {
-  load(): Promise<SettingsSummary>;
-  save(fields: ProviderFields): Promise<SettingsSummary>;
+  load(): Promise<AiSettingsSummary>;
+  save(fields: ProviderFields): Promise<AiSettingsSummary>;
 }
 
 export interface SettingsState {
   readonly fields: ProviderFields;
-  readonly saved: SettingsSummary | null;
+  readonly saved: AiSettingsSummary | null;
   readonly loading: boolean;
   readonly loaded: boolean;
   readonly saving: boolean;
@@ -26,8 +20,8 @@ function emptyFields(): ProviderFields {
   return { provider: 'openai-compatible', endpoint: '', model: '', keyAction: 'keep', apiKey: '' };
 }
 
-function fromSummary(summary: SettingsSummary): ProviderFields {
-  return { ...emptyFields(), ...summary.connection };
+function fromSummary(summary: AiSettingsSummary): ProviderFields {
+  return { ...emptyFields(), ...summary.config };
 }
 
 export class Settings {
@@ -86,7 +80,7 @@ export class Settings {
   }
 
   isReady(): boolean {
-    return !!this.state.saved?.connection && this.state.saved.hasStoredKey;
+    return !!this.state.saved?.config && this.state.saved.hasKey;
   }
 
   async save(): Promise<void> {

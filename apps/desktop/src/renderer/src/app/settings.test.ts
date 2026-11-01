@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Settings } from './settings';
-import type { SettingsSummary } from './settings';
+import type { AiSettingsSummary as SettingsSummary } from '../../../shared/desktop-api';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -10,8 +10,8 @@ function deferred<T>() {
 }
 
 const summary: SettingsSummary = {
-  connection: { provider: 'openai-compatible', endpoint: 'https://provider.invalid/v1', model: 'user-selected-model' },
-  hasStoredKey: true,
+  config: { provider: 'openai-compatible', endpoint: 'https://provider.invalid/v1', model: 'user-selected-model' },
+  hasKey: true,
 };
 
 describe('settings draft state with injected metadata-only ports', () => {
@@ -62,7 +62,7 @@ describe('settings draft state with injected metadata-only ports', () => {
 
   it('retains user-entered configuration and key after a save failure without claiming readiness', async () => {
     const settings = new Settings({
-      load: async () => ({ connection: null, hasStoredKey: false }),
+      load: async () => ({ config: null, hasKey: false }),
       save: async () => { throw new Error('Protected key storage is unavailable.'); },
     });
     await settings.initialize();

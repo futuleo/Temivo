@@ -32,7 +32,7 @@ describe('isolated server-rendered UI, without launching an application', () => 
     expect(canvas).toContain('aria-pressed="true"');
     const inspector = renderToStaticMarkup(createElement(NodeEditor, {
       document, node: document.map.nodes[0]!, draft: createNodeDraft(document, 'root'), draftStale: false,
-      disabled: false, generationBusy: false, aiReady: false, onChange: noop, onApply: noop, onReset: noop,
+      disabled: false, generationBusy: false, generationBlockedReason: null, aiReady: false, onChange: noop, onApply: noop, onReset: noop,
       onReparent: noop, onAddChild: noop, onDelete: noop, onGenerate: noop, onSettings: noop,
     }));
     expect(inspector).toContain('AI is not configured');

@@ -11,6 +11,7 @@ export interface NodeEditorProps {
   draftStale: boolean;
   disabled: boolean;
   generationBusy: boolean;
+  generationBlockedReason: string | null;
   aiReady: boolean;
   onChange: (fields: NodeFields) => void;
   onApply: () => void;
@@ -23,7 +24,7 @@ export interface NodeEditorProps {
 }
 
 export function NodeEditor({
-  document, node, draft, draftStale, disabled, generationBusy, aiReady,
+  document, node, draft, draftStale, disabled, generationBusy, generationBlockedReason, aiReady,
   onChange, onApply, onReset, onReparent, onAddChild, onDelete, onGenerate, onSettings,
 }: NodeEditorProps) {
   const id = useId();
@@ -50,10 +51,11 @@ export function NodeEditor({
       <div className="inspector-block">
         <h3>Explore with AI</h3>
         {!aiReady && <p className="help">AI is not configured. Editing and saving work without it. <button className="text-button" type="button" onClick={onSettings}>Open settings</button></p>}
+        {generationBlockedReason && <p className="help">{generationBlockedReason}</p>}
         {dirty && <p className="help">Apply your draft before generating. Only unchanged AI content updates automatically; your edits become proposals.</p>}
         <div className="actions">
-          <button type="button" disabled={disabled || generationBusy || dirty || !aiReady} onClick={() => onGenerate('refresh')}>{generationBusy ? 'Generating…' : 'Generate / refresh'}</button>
-          <button type="button" disabled={disabled || generationBusy || dirty || !aiReady} onClick={() => onGenerate('expand')}>Expand missing</button>
+          <button type="button" disabled={disabled || generationBusy || !!generationBlockedReason || dirty || !aiReady} onClick={() => onGenerate('refresh')}>{generationBusy ? 'Generating…' : 'Generate / refresh'}</button>
+          <button type="button" disabled={disabled || generationBusy || !!generationBlockedReason || dirty || !aiReady} onClick={() => onGenerate('expand')}>Expand missing</button>
         </div>
         <p className="help">Expand missing reuses saved branches and only asks for new content.</p>
       </div>

@@ -6,11 +6,11 @@ import {
   startNavigation, unlinkMap,
 } from '@temivo/core';
 import type {
-  GenerationChange, GenerationMode, GenerationRequest, MapDocument, MapLibrary,
+  GenerationChange, GenerationMode, GenerationPlan, GenerationRequest, MapDocument, MapLibrary,
   NavigationPath, PendingGenerationConflicts,
 } from '@temivo/core';
 import {
-  createNodeDraft, draftEdit, isDraftDirty, nodeFields, nodeFingerprint, visibleDepth,
+  createNodeDraft, draftEdit, isDraftDirty, nodeFields, nodeFingerprint, parentChoices, visibleDepth,
 } from '../entities/map';
 import type { NodeDraft, NodeFields } from '../entities/map';
 import type { LibrarySnapshot } from '../../../shared/desktop-api';
@@ -18,8 +18,8 @@ import type { LibrarySnapshot } from '../../../shared/desktop-api';
 export interface WorkspacePorts {
   load(): Promise<LibrarySnapshot>;
   save(library: MapLibrary, expectedRevision: number): Promise<LibrarySnapshot>;
-  generate?(request: GenerationRequest): Promise<readonly GenerationChange[]>;
-  cancel?(mapId: string, sequence: number): Promise<void>;
+  generate(request: GenerationRequest): Promise<readonly GenerationChange[]>;
+  cancel(mapId: string, sequence: number): Promise<void>;
   newId(): string;
 }
 
@@ -391,12 +391,28 @@ export class Workspace {
     return this.state.generation === request;
   }
 
-  async generate(mapId: string, nodeId: string, mode: GenerationMode): Promise<void> {
-    const generate = this.ports.generate;
-    if (!generate) {
-      this.update({ error: 'AI generation is unavailable in this build. Local editing and saving still work.' });
-      return;
+  private protectUnappliedDrafts(library: MapLibrary, plan: GenerationPlan): void {
+    const document = library.documents.find((item) => item.map.id === plan.request.mapId);
+    if (!document) return;
+    const liveIds = new Set(document.map.nodes.map((node) => node.id));
+    const dirtyIds = new Set(Object.values(this.state.drafts)
+      .filter((entry) => entry.mapId === document.map.id && liveIds.has(entry.nodeId) && isDraftDirty(entry.draft))
+      .map((entry) => entry.nodeId));
+    if (dirtyIds.size === 0) return;
+    for (const change of plan.changes) {
+      if (!plan.automaticNodeIds.includes(change.nodeId)) continue;
+      const current = document.map.nodes.find((node) => node.id === change.nodeId);
+      if (current && change.kind === 'upsert' && current.text === change.text && current.parentId === change.parentId &&
+        document.nodeMetadata.find((item) => item.nodeId === change.nodeId)?.description === change.description) continue;
+      const structural = current && (change.kind === 'remove' || change.parentId !== current.parentId);
+      const unaffected = structural ? new Set(parentChoices(document, change.nodeId).map((node) => node.id)) : null;
+      if (dirtyIds.has(change.nodeId) || (unaffected && [...dirtyIds].some((id) => !unaffected.has(id)))) {
+        throw new Error('AI results were not applied because an automatic change affects an unapplied node draft. Your saved content and drafts are intact. Apply or reset those drafts, then generate again to review protected edits as proposals.');
+      }
     }
+  }
+
+  async generate(mapId: string, nodeId: string, mode: GenerationMode): Promise<void> {
     if (this.state.generation || this.state.proposals[mapId]) {
       this.update({ error: 'Finish or cancel the current generation, and review or dismiss proposals before generating again.' });
       return;
@@ -412,12 +428,14 @@ export class Workspace {
       if (!await this.save()) throw new Error('Generation was not sent because saving failed. Your content has been kept.');
       if (!this.isCurrentGeneration(request)) return;
       this.update({ generationStatus: 'Waiting for your AI provider… You can keep editing drafts.' });
-      const changes = await generate(request);
+      const changes = await this.ports.generate(request);
       if (!this.isCurrentGeneration(request)) return;
       if (this.saveTask && !await this.saveTask) throw new Error('AI results were not applied because saving your current work failed. Retry saving, then generate again.');
       if (!this.isCurrentGeneration(request)) return;
       const current = this.available();
-      const result = applyGenerationPlan(current, planGeneration(current, request, changes));
+      const plan = planGeneration(current, request, changes);
+      this.protectUnappliedDrafts(current, plan);
+      const result = applyGenerationPlan(current, plan);
       this.setLibrary(result.library);
       const proposals = { ...this.state.proposals };
       if (result.pendingConflicts) proposals[mapId] = { pending: result.pendingConflicts, selectedIds: [] };
@@ -441,10 +459,7 @@ export class Workspace {
     const request = this.state.generation;
     if (!request) return;
     this.update({ generation: null, generationStatus: 'Generation canceled. Existing content and drafts are unchanged.' });
-    try {
-      if (!this.ports.cancel) throw new Error('Provider cancellation is unavailable. Any late result will be ignored.');
-      await this.ports.cancel(request.mapId, request.sequence);
-    }
+    try { await this.ports.cancel(request.mapId, request.sequence); }
     catch (error) { this.update({ error: errorMessage(error, 'The provider could not confirm cancellation. Any late result will be ignored.') }); }
   }
 

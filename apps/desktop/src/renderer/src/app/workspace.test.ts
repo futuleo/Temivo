@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  addMap, addNode, createMapLibrary, createTopicMap, linkMaps,
+  addMap, addNode, createMapLibrary, createTopicMap, editNode, linkMaps,
 } from '@temivo/core';
 import type { GenerationChange, MapLibrary } from '@temivo/core';
 import { isDraftDirty, nodeFingerprint } from '../entities/map';
@@ -147,16 +147,105 @@ describe('renderer workspace with isolated injected ports', () => {
     expect(workspace.getSnapshot().proposals['one']).toBeUndefined();
   });
 
-  it('preserves typed drafts when automatic generation updates the underlying saved node', async () => {
+  it('does not automatically update an AI node that acquired an unapplied draft during generation', async () => {
+    let calls = 0;
     const response = deferred<readonly GenerationChange[]>();
-    const { workspace } = await setup({ generate: () => response.promise });
+    const { workspace } = await setup({ generate: async () => {
+      calls += 1;
+      return calls === 1 ? [{ kind: 'upsert', nodeId: 'ai', parentId: 'root', text: 'Original AI text', description: '' }] : response.promise;
+    } });
+    await workspace.generate('one', 'root', 'expand');
     const generating = workspace.generate('one', 'root', 'refresh');
     await workspace.save();
-    workspace.selectNode('manual');
-    workspace.changeDraft('one', 'manual', { ...workspace.getDraft('one', 'manual')!.fields, text: 'Currently typing' });
-    response.resolve([{ kind: 'upsert', nodeId: 'manual', parentId: 'root', text: 'AI suggests', description: '' }]);
+    workspace.selectNode('ai');
+    workspace.changeDraft('one', 'ai', { ...workspace.getDraft('one', 'ai')!.fields, text: 'Currently typing' });
+    response.resolve([{ kind: 'upsert', nodeId: 'ai', parentId: 'root', text: 'AI refresh', description: '' }]);
     await generating;
-    expect(workspace.getDraft('one', 'manual')?.fields.text).toBe('Currently typing');
+    expect(workspace.getDraft('one', 'ai')?.fields.text).toBe('Currently typing');
+    expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'ai')?.text).toBe('Original AI text');
+    expect(workspace.getSnapshot().error).toContain('affects an unapplied node draft');
+    expect(workspace.applyDraft('one', 'ai')).toBe(true);
+    await workspace.save();
+    await workspace.generate('one', 'root', 'refresh');
+    expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'ai')?.text).toBe('Currently typing');
+    expect(workspace.getSnapshot().proposals['one']?.pending.conflicts).toContainEqual({ nodeId: 'ai', reason: 'manual-or-edited' });
+  });
+
+  it('cancels before dispatch while begun state is still being saved, without a late provider request', async () => {
+    const saving = deferred<{ library: MapLibrary; revision: number }>();
+    let begun: MapLibrary | null = null;
+    const { workspace, ports } = await setup({ save: (library) => { begun = library; return saving.promise; } });
+    const generating = workspace.generate('one', 'root', 'expand');
+    await workspace.cancelGeneration();
+    expect(begun).not.toBeNull();
+    saving.resolve({ library: begun!, revision: 1 });
+    await generating;
+    expect(ports.generate).not.toHaveBeenCalled();
+    expect(ports.cancel).toHaveBeenCalledWith('one', 1);
+    expect(workspace.getSnapshot().generationStatus).toContain('canceled');
+  });
+
+  it('does not automatically remove an AI ancestor of a dirty descendant draft', async () => {
+    let calls = 0;
+    const initial = editNode(fixture(), 'one', 'root', { context: { instructions: '', detail: 'brief', depth: 2 } });
+    const { workspace } = await setup({
+      generate: async () => {
+        calls += 1;
+        return calls === 1 ? [
+          { kind: 'upsert', nodeId: 'ai-parent', parentId: 'root', text: 'AI parent', description: '' },
+          { kind: 'upsert', nodeId: 'ai-child', parentId: 'ai-parent', text: 'AI detail', description: '' },
+        ] : [{ kind: 'remove', nodeId: 'ai-parent' }];
+      },
+    }, initial);
+    await workspace.generate('one', 'root', 'expand');
+    workspace.selectNode('ai-child');
+    workspace.changeDraft('one', 'ai-child', { ...workspace.getDraft('one', 'ai-child')!.fields, description: 'Unapplied detail' });
+    await workspace.generate('one', 'root', 'refresh');
+    expect(workspace.getSnapshot().error).toContain('affects an unapplied node draft');
+    expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'ai-child')?.parentId).toBe('ai-parent');
+    expect(workspace.currentDocument()?.map.nodes.some((node) => node.id === 'ai-parent')).toBe(true);
+    expect(workspace.getDraft('one', 'ai-child')?.fields.description).toBe('Unapplied detail');
+  });
+
+  it('reuses unchanged saved expansion content without overwriting an unrelated form draft', async () => {
+    const change: GenerationChange = { kind: 'upsert', nodeId: 'ai', parentId: 'root', text: 'Saved AI content', description: '' };
+    const { workspace } = await setup({ generate: async () => [change] });
+    await workspace.generate('one', 'root', 'expand');
+    workspace.selectNode('ai');
+    workspace.changeDraft('one', 'ai', { ...workspace.getDraft('one', 'ai')!.fields, text: 'A new draft' });
+    await workspace.generate('one', 'root', 'expand');
+    expect(workspace.getSnapshot().error).toBeNull();
+    expect(workspace.currentDocument()?.map.nodes.filter((node) => node.id === 'ai')).toHaveLength(1);
+    expect(workspace.getDraft('one', 'ai')?.fields.text).toBe('A new draft');
+  });
+
+  it('applies generation to the latest library without replacing edits in another world', async () => {
+    const response = deferred<readonly GenerationChange[]>();
+    const { workspace } = await setup({ generate: () => response.promise });
+    const generating = workspace.generate('one', 'root', 'expand');
+    await workspace.save();
+    workspace.openWorld('two');
+    workspace.changeDraft('two', 'root', { ...workspace.getDraft('two', 'root')!.fields, text: 'Second world edited' });
+    workspace.applyDraft('two', 'root');
+    await workspace.save();
+    response.resolve([{ kind: 'upsert', nodeId: 'ai', parentId: 'root', text: 'First world branch', description: '' }]);
+    await generating;
+    expect(workspace.currentDocument()?.map.id).toBe('two');
+    expect(workspace.currentDocument()?.map.nodes[0]?.text).toBe('Second world edited');
+    expect(workspace.getSnapshot().library?.documents.find((document) => document.map.id === 'one')?.map.nodes.some((node) => node.id === 'ai')).toBe(true);
+    expect(workspace.getSnapshot().dirty).toBe(false);
+  });
+
+  it('keeps stale proposals unapplied after intervening structural edits', async () => {
+    const { workspace } = await setup({
+      generate: async () => [{ kind: 'upsert', nodeId: 'manual', parentId: 'root', text: 'Proposal', description: '' }],
+    });
+    await workspace.generate('one', 'root', 'refresh');
+    workspace.toggleProposal('one', 'manual');
+    workspace.reparent('one', 'manual', null);
+    await workspace.save();
+    expect(workspace.approveProposals('one')).toBe(false);
+    expect(workspace.getSnapshot().error).toContain('stale');
     expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'manual')?.text).toBe('My work');
     expect(workspace.getSnapshot().proposals['one']).toBeDefined();
   });

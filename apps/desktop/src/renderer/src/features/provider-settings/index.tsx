@@ -36,15 +36,16 @@ export function ProviderSettings({
       <label className="field">Provider protocol<select value={fields.provider} onChange={(event) => update('provider', event.target.value === 'anthropic' ? 'anthropic' : 'openai-compatible')}>
         <option value="openai-compatible">OpenAI-compatible (including DeepSeek)</option><option value="anthropic">Anthropic (native Messages API)</option>
       </select></label>
-      <label className="field">Endpoint URL<input type="url" required value={fields.endpoint} placeholder="Enter your provider endpoint" onChange={(event) => update('endpoint', event.target.value)} spellCheck={false} /></label>
-      <p className="help">Use your provider's documented endpoint. The desktop main process validates it and handles all network requests.</p>
+      <label className="field">API base URL<input type="url" required value={fields.endpoint} placeholder="Enter your provider API base URL" onChange={(event) => update('endpoint', event.target.value)} spellCheck={false} /></label>
+      <p className="help">Include your provider's version prefix, not an operation such as /chat/completions or /messages. The desktop main process validates the base URL and handles all network requests.</p>
       <label className="field">Model ID<input required value={fields.model} placeholder="Exact model ID from your provider" onChange={(event) => update('model', event.target.value)} spellCheck={false} /></label>
       <fieldset className="credential-fields"><legend>API key (write-only)</legend>
         <label className="field">Credential action<select value={fields.keyAction} onChange={(event) => onChange({ ...fields, keyAction: event.target.value === 'replace' ? 'replace' : event.target.value === 'remove' ? 'remove' : 'keep', apiKey: '' })}>
-          <option value="keep">{hasStoredKey ? 'Keep the configured key' : 'Do not add a key'}</option><option value="replace">Enter a new key</option><option value="remove">Remove the configured key</option>
+          <option value="keep">{hasStoredKey ? 'Keep key for the same destination' : 'Do not add a key'}</option><option value="replace">Enter a new key</option><option value="remove">Remove the configured key</option>
         </select></label>
         {fields.keyAction === 'replace' && <label className="field">New API key<input type="password" autoComplete="new-password" required value={fields.apiKey} onChange={(event) => update('apiKey', event.target.value)} spellCheck={false} /></label>}
-        <p className="help">Only the key you type is present in this form. Stored keys are never returned or displayed. New keys are cleared from the form after a successful save.</p>
+        <p className="help">Only the key you type is present in this form. Stored keys are never returned or displayed. New keys are cleared from the form after a successful save. A configured key has not been tested or unlocked by this screen.</p>
+        <p className="help">Changing the provider or API base removes the previous key unless you enter a replacement. Model-only changes can keep it.</p>
       </fieldset>
       <p className="help">Generation uses the last saved connection, not unapplied settings form edits.</p>
       <button type="submit" className="primary" disabled={saving || !dirty || !loaded}>{saving ? 'Saving settings…' : 'Save settings'}</button>

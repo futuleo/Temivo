@@ -21,13 +21,13 @@ export function WorkspaceView({
   aiReady,
 }: {
   workspace: Workspace;
-  settings: ProviderSettingsProps | null;
+  settings: ProviderSettingsProps;
   aiReady: boolean;
 }) {
   const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const drafts = Object.values(state.drafts).filter((entry) => isDraftDirty(entry.draft));
-  const hasUnsaved = state.dirty || drafts.length > 0 || settings?.dirty || settings?.saving || state.generation !== null || Object.keys(state.proposals).length > 0;
+  const hasUnsaved = state.dirty || drafts.length > 0 || settings.dirty || settings.saving || state.generation !== null || Object.keys(state.proposals).length > 0;
   useEffect(() => {
     void workspace.initialize();
   }, [workspace]);
@@ -83,14 +83,17 @@ export function WorkspaceView({
           onRenameCollection={(id) => name('Rename collection', 'Collection name', 'Rename collection', (value) => workspace.renameCollection(id, value), library.collections.find((item) => item.id === id)?.title)}
           onDeleteCollection={(id) => confirm('Delete this collection?', <p>Only this collection is removed. Every map stays in All Maps and in its other collections.</p>, 'Delete collection', () => workspace.deleteCollection(id))}
           onToggleWorld={(id) => workspace.toggleWorld(id)} onOpenWorld={(id, via) => workspace.openWorld(id, via)} />}
-        {state.page === 'settings' && (settings ? <SettingsPage {...settings} /> : <section className="settings-page"><h1>Settings</h1><Notice>Provider settings are not available in this build yet. Local map creation, editing and saving are available.</Notice></section>)}
+        {state.page === 'settings' && <SettingsPage {...settings} />}
         {state.page === 'world' && document && state.path && <WorldPage library={library} document={document} path={state.path} selectedNodeId={node?.id ?? null} expandedNodeIds={state.expandedNodes[document.map.id] ?? []} disabled={disabled}
           onSelect={(id) => workspace.selectNode(id)} onToggle={(id) => workspace.toggleNode(id)} onOpenWorld={(id) => workspace.followWorld(id)}
           onBreadcrumb={(index) => workspace.breadcrumb(index)} onBack={() => workspace.back()} onLibrary={() => workspace.showLibrary()}
           onAddRoot={() => name('Add a root node', 'Node text', 'Add node', (text) => workspace.addNode(document.map.id, null, text))}
           onRename={() => rename(document.map.id)} onCollections={() => organize(document.map.id)}
           nodeEditor={node && draft ? {
-            document, node, draft, draftStale, disabled, generationBusy: state.generation !== null || !!proposal, aiReady,
+            document, node, draft, draftStale, disabled, generationBusy: state.generation?.mapId === document.map.id, aiReady,
+            generationBlockedReason: proposal ? 'Review or dismiss the current proposals before generating again.'
+              : state.generation && state.generation.mapId !== document.map.id ? 'Another world is generating. Finish or cancel that request first.'
+                : settings.saving || settings.loading ? 'Wait for provider settings to finish loading or saving before generating.' : null,
             onChange: (fields) => workspace.changeDraft(document.map.id, node.id, fields),
             onApply: () => {
               if (draftStale) confirm('Apply your draft over changed fields?', <><p>Your draft will replace the current saved text, description and generation context for this node. Its current parent is kept.</p><div className="comparison"><div><span className="eyebrow">CURRENT FIELDS</span><p>{node.text || 'Untitled node'}</p><p>{document.nodeMetadata.find((item) => item.nodeId === node.id)?.description}</p><p>{document.nodeMetadata.find((item) => item.nodeId === node.id)?.context.instructions}</p></div><div><span className="eyebrow">YOUR DRAFT</span><p>{draft.fields.text || 'Untitled node'}</p><p>{draft.fields.description}</p><p>{draft.fields.instructions}</p><p>Depth {draft.fields.depth} · {draft.fields.detail}</p></div></div></>, 'Apply my draft', () => { workspace.applyDraft(document.map.id, node.id, true); });
@@ -148,7 +151,8 @@ export function WorkspaceView({
         }}>
           {state.error && <Notice tone="error">{state.error}</Notice>}
           <label className="field">Central word or phrase<input name="topic" autoFocus defaultValue={dialog.initialTopic} pattern=".*\S.*" required /></label>
-          {aiReady ? <label className="check-label"><input type="checkbox" name="generate" defaultChecked />Generate initial branches with my AI provider</label> : <p className="help">Start locally. Configure an AI provider in Settings when you want to generate branches.</p>}
+          {aiReady ? <label className="check-label"><input type="checkbox" name="generate" defaultChecked disabled={settings.saving || settings.loading || state.generation !== null} />Generate initial branches with my AI provider</label> : <p className="help">Start locally. Configure an AI provider in Settings when you want to generate branches.</p>}
+          {aiReady && (settings.saving || settings.loading || state.generation !== null) && <p className="help">AI is busy. This map can still be created locally; generate branches after the current operation finishes.</p>}
           <p className="help">The central node starts with editable description, instructions, detail and depth fields. All linked worlds are separate maps.</p>
           <div className="actions dialog-actions"><button type="button" onClick={closeDialog}>Cancel</button><button type="submit" className="primary" disabled={disabled}>Create map</button></div>
         </form>
