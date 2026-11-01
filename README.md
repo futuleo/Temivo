@@ -115,7 +115,51 @@ blocks direct secret-file paths, common shell secret reads, and obvious environm
 It is a guardrail, not a sandbox: arbitrary shell code or unrecognized tools cannot be fully
 secured by path and command matching. Only `.env.example` may be edited as a public template.
 Keep AI credentials out of `VITE_*`, renderer/preload APIs, and any local database.
-Production credential storage is a separate, platform-protected integration.
+AI provider infrastructure is described below; it is not connected to the application yet.
+
+### AI infrastructure (not yet integrated)
+
+Main-only modules in `apps/desktop/src/main/ai-*` provide bounded JSON transport and protected
+settings storage. They are intentionally **not wired to startup, IPC, preload, core, SQLite, or
+the UI**. They do not constitute a working generation feature; approved domain-output validation,
+application of results, and provider/settings UI are still pending.
+
+`AiProviderTransport` takes an injected fetch function and an explicit provider, API base URL,
+user-selected model, credential, and private prompt. The `openai-compatible` adapter appends
+`/chat/completions` (for example a DeepSeek API base); `anthropic` appends `/messages` and uses
+native Messages headers/body (its API base includes `/v1`). No model, endpoint, or provider is
+silently selected. Both use `max_tokens`; a configured model must support that protocol parameter.
+Non-loopback endpoints require HTTPS; HTTP is allowed only for literal `127.0.0.1` and `::1`.
+URL credentials, queries, fragments, redirects, retries, and provider fallback are disallowed.
+Requests default to a 30-second deadline and a 256-KiB streamed response limit. Only complete text
+responses containing valid JSON are accepted; tool calls, refusals, malformed replies, and
+provider-reported truncation fail explicitly. Returned JSON is still `unknown`, not validated
+domain data. Errors contain fixed codes/messages, never raw provider bodies or exception causes.
+
+`AiSettingsStore` takes an explicit main-private file path and an injected key codec. Use one
+instance per file. Updates serialize within that instance and atomically replace the file via a
+same-directory, exclusively created, mode-0600 temporary file, synced before rename. Settings
+contain versioned provider metadata and ciphertext only, never plaintext credentials. Corrupt or
+unsupported files are rejected, not reset; failed updates preserve the previous file. A missing
+key update retains a key only for the same provider and normalized API base; changing either
+removes the old key unless a new one is explicitly supplied. Model-only edits retain it.
+Encrypted envelopes also bind the key to that destination. `null` removes a key. The serializable
+summary contains only `config` and `hasKey`; `hasKey` indicates stored ciphertext, not successful
+unlocking. `readForRequest()` returns credentials **only for use inside main**, never for IPC.
+
+`createAiKeyCodec` accepts Electron 45's async safeStorage API by injection; it imports no Electron
+runtime. Creation, metadata writes, and summary reads do not initialize key protection or prompt
+Keychain. Actual key encryption/decryption checks availability lazily and fails explicitly if
+unavailable, with no plaintext fallback. macOS/Windows are supported by this wrapper. Linux is
+currently **unavailable by design**: the installed API's `getSelectedStorageBackend()` does not
+establish the backend used by its separate async encryptor, so neither an unknown backend nor a
+potential basic-text fallback is accepted as protection. Linux support needs a verifiable protected
+async backend before enabling it.
+
+Unit tests inject fetch and fake safeStorage/codec implementations and use newly created
+temporary files. They use no network sockets, live providers, real keys, Electron process,
+Keychain, or existing application/user-data directories. No manual app or live-provider check is
+implied by these tests or by a static production build.
 
 ### Copilot configuration
 
