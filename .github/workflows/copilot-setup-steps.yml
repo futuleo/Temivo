@@ -1,0 +1,48 @@
+name: Copilot Setup Steps
+
+# Runs automatically when this file changes so the setup can be validated,
+# and can be run manually from the repository's Actions tab.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` to be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # Uses the version pinned in the root package.json `packageManager` field.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Electron downloads its binary lazily; fetch it now so `pnpm dev` works offline.
+      - name: Download Electron binary
+        run: pnpm --filter @temivo/desktop exec install-electron
+
+      # Chromium's setuid sandbox helper must be root-owned so Electron can start with its
+      # sandbox enabled. Run the app headlessly with `xvfb-run -a pnpm dev`.
+      - name: Configure Electron sandbox helper
+        run: |
+          helper="$(pnpm --filter @temivo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron')), 'dist', 'chrome-sandbox')")"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"

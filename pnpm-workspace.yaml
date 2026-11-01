@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Shared dependency versions, referenced as "catalog:" in package.json files.
+catalog:
+  typescript: ~6.0.3
+  vitest: ^5.0.5
+
+# Only these dependencies may run install scripts (esbuild installs its native binary).
+# Electron downloads its binary on first use, or explicitly via `pnpm --filter @temivo/desktop exec install-electron`.
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,19 @@
+{
+  "name": "@temivo/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Platform-independent domain logic shared by Temivo clients.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "node .github/hooks/scripts/pre-tool-use.mjs || true",
+        "powershell": "node .github/hooks/scripts/pre-tool-use.mjs; exit 0",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
