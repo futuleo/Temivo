@@ -69,6 +69,15 @@ passed into core through parameters or interfaces. The boundary is enforced by c
 
 The core package exports its TypeScript sources and is bundled by each consuming app.
 
+#### Mind map model
+
+Core exports the map/node/link types, validation helpers (`assertMindMap`, `assertMapLink`,
+`assertMapId`, `InvalidMindMapError`), and the async `MindMapRepository` port. The port only
+describes persistence; core contains no storage implementation, and no SQLite adapter or editor UI
+exists yet. Node IDs are scoped to a map and nodes have a nullable parent ID. Empty maps and
+unfinished text are allowed, while duplicate IDs, missing parents, and parent cycles are rejected.
+A link targets a separate map; maps stay independent of their links.
+
 ### Configuration and secrets
 
 No application environment variables are required yet. `.env.example` is the public contract:
