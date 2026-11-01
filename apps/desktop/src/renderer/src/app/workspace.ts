@@ -382,7 +382,9 @@ export class Workspace {
     const id = this.ports.newId();
     if (this.change((library) => addNode(library, mapId, { id, parentId, text }))) this.selectNode(id);
   }
-  reparent(mapId: string, nodeId: string, parentId: string | null): void { this.change((library) => reparentNode(library, mapId, nodeId, parentId)); }
+  reparent(mapId: string, nodeId: string, parentId: string | null): void {
+    if (this.change((library) => reparentNode(library, mapId, nodeId, parentId))) this.selectNode(nodeId);
+  }
   deleteNode(mapId: string, nodeId: string): void { this.change((library) => removeNode(library, mapId, nodeId)); }
   linkWorld(mapId: string, nodeId: string, targetMapId: string): void { this.change((library) => linkMaps(library, { sourceMapId: mapId, sourceNodeId: nodeId, targetMapId })); }
   detachWorld(mapId: string, nodeId: string): void { this.change((library) => unlinkMap(library, mapId, nodeId)); }

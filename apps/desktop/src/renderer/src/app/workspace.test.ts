@@ -3,7 +3,7 @@ import {
   addMap, addNode, createMapLibrary, createTopicMap, editNode, linkMaps,
 } from '@temivo/core';
 import type { GenerationChange, MapLibrary } from '@temivo/core';
-import { isDraftDirty, nodeFingerprint } from '../entities/map';
+import { isDraftDirty, nodeFingerprint, projectNodes } from '../entities/map';
 import { DesktopPortError, Workspace } from './workspace';
 import type { WorkspacePorts } from './workspace';
 
@@ -301,6 +301,20 @@ describe('renderer workspace with isolated injected ports', () => {
     expect(workspace.getSnapshot().path?.steps.map((step) => step.mapId)).toEqual(['one', 'new-1']);
     expect(workspace.getSnapshot().library?.documents).toHaveLength(3);
     expect(workspace.currentDocument()?.map.nodes[0]?.id).toBe('new-2');
+  });
+
+  it('keeps the selected node visible when moved under a previously collapsed parent', async () => {
+    const initial = addNode(addNode(fixture(), 'one', { id: 'folder', parentId: null, text: 'Folder' }),
+      'one', { id: 'nested', parentId: 'folder', text: 'Nested parent' });
+    const { workspace } = await setup({}, initial);
+    workspace.selectNode('manual');
+    workspace.changeDraft('one', 'manual', { ...workspace.getDraft('one', 'manual')!.fields, text: 'Draft during move' });
+    workspace.reparent('one', 'manual', 'nested');
+    await workspace.save();
+    const rows = projectNodes(workspace.currentDocument()!, workspace.getSnapshot().expandedNodes['one'] ?? []);
+    expect(rows.some((row) => row.node.id === 'manual')).toBe(true);
+    expect(workspace.getSnapshot().selectedNodes['one']).toBe('manual');
+    expect(workspace.getDraft('one', 'manual')?.fields.text).toBe('Draft during move');
   });
 
   it('does not resurrect moved AI descendants through renderer generation handlers', async () => {
