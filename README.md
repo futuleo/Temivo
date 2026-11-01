@@ -207,6 +207,7 @@ user-selected model, credential, and private prompt. The `openai-compatible` ada
 `/chat/completions` (for example a DeepSeek API base); `anthropic` appends `/messages` and uses
 native Messages headers/body (its API base includes `/v1`). No model, endpoint, or provider is
 silently selected. Both use `max_tokens`; a configured model must support that protocol parameter.
+Entered and normalized API bases are both limited to 2048 characters so saved settings remain readable.
 Non-loopback endpoints require HTTPS; HTTP is allowed only for literal `127.0.0.1` and `::1`.
 URL credentials, queries, fragments, redirects, retries, and provider fallback are disallowed.
 Requests default to a 30-second deadline and a 256-KiB streamed response limit. Only complete text

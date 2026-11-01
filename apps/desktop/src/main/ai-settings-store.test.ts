@@ -89,6 +89,35 @@ describe('main-only AI settings (fresh temporary paths and fake protection)', ()
     expect(codec.encrypt).toHaveBeenCalledOnce();
   });
 
+  it.each([undefined, null, 'replacement-synthetic-nonworking-key'])(
+    'rejects oversized normalized endpoints without changing saved settings or key binding %#', async (keyUpdate) => {
+      const codec = fakeCodec();
+      const store = new AiSettingsStore(path, codec);
+      const summary = await store.update(config, key);
+      const saved = await readFile(path);
+      const endpoint = 'https://provider.invalid/' + '\u00e9'.repeat(400);
+      await expect(store.update({ ...config, endpoint }, keyUpdate)).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+      expect(await readFile(path)).toEqual(saved);
+      const reloaded = new AiSettingsStore(path, codec);
+      expect(await reloaded.summary()).toEqual(summary);
+      expect(await reloaded.readForRequest()).toEqual({ config, key });
+      expect(codec.encrypt).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('persists and reloads an accepted Unicode endpoint at the normalized length bound', async () => {
+    const unicodeEndpoint = 'https://provider.invalid/' + '\u00e9'.repeat(300);
+    const endpoint = unicodeEndpoint + 'x'.repeat(2048 - new URL(unicodeEndpoint).href.length);
+    const expectedConfig = { ...config, endpoint: new URL(endpoint).href };
+    const codec = fakeCodec();
+    expect(expectedConfig.endpoint).toHaveLength(2048);
+    const summary = await new AiSettingsStore(path, codec).update({ ...config, endpoint }, key);
+    expect(summary).toEqual({ config: expectedConfig, hasKey: true });
+    const reloaded = new AiSettingsStore(path, codec);
+    expect(await reloaded.summary()).toEqual(summary);
+    expect(await reloaded.readForRequest()).toEqual({ config: expectedConfig, key });
+  });
+
   it.each([
     { ...config, provider: 'anthropic' },
     { ...config, endpoint: 'https://another-provider.invalid/v1' },

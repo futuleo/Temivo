@@ -1,5 +1,7 @@
 import { AiInfrastructureError } from './ai-errors';
 
+const maximumEndpointLength = 2048;
+
 export interface AiProviderConfig {
   provider: 'openai-compatible' | 'anthropic';
   /** API base URL, including any version prefix; not the operation URL. */
@@ -21,7 +23,7 @@ export function parseAiProviderConfig(value: unknown): AiProviderConfig {
     Object.keys(value).some((key) => !['provider', 'endpoint', 'model'].includes(key)) ||
     (value.provider !== 'openai-compatible' && value.provider !== 'anthropic') ||
     typeof value.endpoint !== 'string' ||
-    value.endpoint.length > 2048 ||
+    value.endpoint.length > maximumEndpointLength ||
     /[\s\\?#]/u.test(value.endpoint) ||
     hasControlCharacters(value.endpoint) ||
     typeof value.model !== 'string' ||
@@ -40,17 +42,19 @@ export function parseAiProviderConfig(value: unknown): AiProviderConfig {
     throw new AiInfrastructureError('INVALID_CONFIG');
   }
   const loopback = endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]';
+  const normalizedEndpoint = endpoint.href.replace(/\/+$/u, '');
   if (
     (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && loopback)) ||
     endpoint.username !== '' ||
     endpoint.password !== '' ||
-    endpoint.hostname === ''
+    endpoint.hostname === '' ||
+    normalizedEndpoint.length > maximumEndpointLength
   ) {
     throw new AiInfrastructureError('INVALID_CONFIG');
   }
   return {
     provider: value.provider,
-    endpoint: endpoint.href.replace(/\/+$/u, ''),
+    endpoint: normalizedEndpoint,
     model: value.model,
   };
 }

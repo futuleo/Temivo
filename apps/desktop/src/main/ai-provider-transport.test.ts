@@ -29,6 +29,23 @@ afterEach(() => {
 });
 
 describe('provider configuration', () => {
+  it('rejects endpoints whose normalized form exceeds the persisted length bound', () => {
+    const endpoint = 'https://provider.invalid/' + '\u00e9'.repeat(400);
+    expect(endpoint.length).toBeLessThan(2048);
+    expect(new URL(endpoint).href.length).toBeGreaterThan(2048);
+    expect(() => parseAiProviderConfig({ ...config, endpoint })).toThrow('Invalid AI provider configuration.');
+  });
+
+  it('round-trips an accepted Unicode endpoint at the exact normalized length bound', () => {
+    const unicodeEndpoint = 'https://provider.invalid/' + '\u00e9'.repeat(300);
+    const endpoint = unicodeEndpoint + 'x'.repeat(2048 - new URL(unicodeEndpoint).href.length);
+    const parsed = parseAiProviderConfig({ ...config, endpoint });
+    expect(parsed.endpoint).toHaveLength(2048);
+    expect(parseAiProviderConfig(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
+    expect(() => parseAiProviderConfig({ ...config, endpoint: endpoint + 'x' }))
+      .toThrow('Invalid AI provider configuration.');
+  });
+
   it('normalizes API bases and allows HTTPS or explicit numeric loopback HTTP only', () => {
     expect(parseAiProviderConfig({ ...config, endpoint: 'https://PROVIDER.invalid:443/v1/' })).toEqual(config);
     for (const endpoint of ['http://127.0.0.1:8080/v1', 'http://[::1]:8080/v1']) {
