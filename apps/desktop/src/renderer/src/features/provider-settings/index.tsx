@@ -11,26 +11,28 @@ export interface ProviderFields {
 export interface ProviderSettingsProps {
   fields: ProviderFields;
   hasStoredKey: boolean;
-  keyStorageAvailable: boolean;
   dirty: boolean;
+  loaded: boolean;
+  loading: boolean;
   saving: boolean;
   error: string | null;
   status: string | null;
   onChange: (fields: ProviderFields) => void;
   onSave: () => void;
+  onRetryLoad: () => void;
 }
 
 export function ProviderSettings({
-  fields, hasStoredKey, keyStorageAvailable, dirty, saving, error, status, onChange, onSave,
+  fields, hasStoredKey, dirty, loaded, loading, saving, error, status, onChange, onSave, onRetryLoad,
 }: ProviderSettingsProps) {
   const update = <K extends keyof ProviderFields>(key: K, value: ProviderFields[K]) => onChange({ ...fields, [key]: value });
   return (
     <form className="settings-card" onSubmit={(event) => { event.preventDefault(); onSave(); }}>
-      <div className="section-heading"><div><span className="eyebrow">YOUR PROVIDER, YOUR CHOICE</span><h2>AI connection</h2></div><span className="badge">{hasStoredKey ? 'Key configured' : 'No key configured'}</span></div>
+      <div className="section-heading"><div><span className="eyebrow">YOUR PROVIDER, YOUR CHOICE</span><h2>AI connection</h2></div><span className="badge">{!loaded ? 'Settings not loaded' : hasStoredKey ? 'Key configured' : 'No key configured'}</span></div>
       <p className="help">Temivo never supplies a key or chooses a model for you. Local maps work without AI. Saving settings does not test the provider or send a request.</p>
       {error && <Notice tone="error">{error}</Notice>}
       {status && <Notice tone="success">{status}</Notice>}
-      {!keyStorageAvailable && <Notice tone="error">Protected credential storage is unavailable. You can still work locally; key changes cannot be saved right now.</Notice>}
+      {!loaded && <Notice>{loading ? 'Loading saved provider settings… Your form edits stay safe.' : <><p>Saved settings could not be loaded. Local maps still work; your form draft has been kept.</p><button type="button" onClick={onRetryLoad}>Retry loading settings</button></>}</Notice>}
       <label className="field">Provider protocol<select value={fields.provider} onChange={(event) => update('provider', event.target.value === 'anthropic' ? 'anthropic' : 'openai-compatible')}>
         <option value="openai-compatible">OpenAI-compatible (including DeepSeek)</option><option value="anthropic">Anthropic (native Messages API)</option>
       </select></label>
@@ -44,7 +46,8 @@ export function ProviderSettings({
         {fields.keyAction === 'replace' && <label className="field">New API key<input type="password" autoComplete="new-password" required value={fields.apiKey} onChange={(event) => update('apiKey', event.target.value)} spellCheck={false} /></label>}
         <p className="help">Only the key you type is present in this form. Stored keys are never returned or displayed. New keys are cleared from the form after a successful save.</p>
       </fieldset>
-      <button type="submit" className="primary" disabled={saving || !dirty || (fields.keyAction !== 'keep' && !keyStorageAvailable)}>{saving ? 'Saving settings…' : 'Save settings'}</button>
+      <p className="help">Generation uses the last saved connection, not unapplied settings form edits.</p>
+      <button type="submit" className="primary" disabled={saving || !dirty || !loaded}>{saving ? 'Saving settings…' : 'Save settings'}</button>
     </form>
   );
 }

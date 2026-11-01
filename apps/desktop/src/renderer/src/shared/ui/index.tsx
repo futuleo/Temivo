@@ -29,6 +29,7 @@ export function Modal({
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
+    return () => { if (dialog?.open) dialog.close(); };
   }, []);
   return (
     <dialog ref={ref} className="modal" aria-labelledby={titleId} onCancel={(event) => {

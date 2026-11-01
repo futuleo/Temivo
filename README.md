@@ -5,9 +5,10 @@ lead to separate linked maps, which stay independent and can be detached. The re
 monorepo with a platform-independent shared core; the desktop app is the first client and the
 initial release, and other clients can reuse the core later.
 
-> This repository contains the project foundation: a shared domain model, SQLite persistence, and
-> an Electron desktop app still showing a placeholder screen. The map editor and AI integration
-> are follow-up features.
+> The desktop includes a local map library, flat collections, a node editor and independent linked
+> worlds over a shared domain model and versioned SQLite persistence. Provider settings and AI
+> proposal UI are built against explicit ports; their real bridge integration is a separate step.
+> Actual application and live-provider acceptance remain pending the user's permission.
 
 ## Requirements
 
@@ -76,8 +77,8 @@ The core package exports its TypeScript sources and is bundled by each consuming
 
 Core exports the map/node/link types, validation helpers (`assertMindMap`, `assertMapLink`,
 `assertMapId`, `InvalidMindMapError`), and the async `MindMapRepository` port. The port only
-describes persistence; core contains no storage implementation. The desktop supplies a SQLite adapter;
-no editor UI exists yet. Node IDs are scoped to a map and nodes have a nullable parent ID. Empty maps and
+describes persistence; core contains no storage implementation. The desktop supplies a SQLite adapter
+and renderer editor. Node IDs are scoped to a map and nodes have a nullable parent ID. Empty maps and
 unfinished text are allowed, while duplicate IDs, missing parents, and parent cycles are rejected.
 A link targets a separate map; maps stay independent of their links.
 
@@ -122,7 +123,7 @@ Generation depth is a positive safe integer **relative to the selected node**: `
 children, `2` adds one more node level. It is unrelated to navigation between independent worlds.
 Reducing depth only changes the requested scope: it never removes saved descendants, even pristine
 AI content. Existing deeper nodes remain available on expansion. Visual collapse state belongs to
-the future renderer. No arbitrary product depth cap or layout rules are imposed by core.
+the renderer. No arbitrary product depth cap or layout rules are imposed by core.
 
 The default `refresh` mode accepts explicit node-ID patches:
 `{ kind: 'upsert', nodeId, parentId, text, description }` or `{ kind: 'remove', nodeId }`.
@@ -158,6 +159,39 @@ for safe automatic work. Approved user content stays user-protected for future g
 stale approvals rather than rebasing over intervening edits. Guards include exact canonical content
 as well as revisions, distinguishing divergent immutable snapshots with equal counters; they are
 optimistic concurrency data, not security credentials.
+
+### Desktop renderer
+
+The React renderer uses Feature-Sliced Design only for the UI, with downward imports and public
+slice indexes: `app` (bridge adapters, orchestration, session state), `pages` (library, world,
+settings), `widgets` (navigation and linked-world overview), `features` (node editing, world links,
+proposal review, provider form), `entities/map` (map presentation and node form drafts), and
+`shared/ui` (accessible controls/dialogs). Core remains the only domain model; renderer slices
+import its public package API instead of duplicating map/editor logic. An isolated architecture
+test checks layer direction and slice boundaries.
+
+All Maps includes every independent world. Collections are flat and many-to-many; their removal
+never deletes a map. Open a map, select a node, and use the inspector to edit its text, description,
+AI instructions, detail and relative depth. **Apply changes** commits a form draft to the local
+library and starts a whole-library CAS save. Structure changes save automatically. A visible
+status distinguishes saving, unapplied drafts, retained unsaved changes and version conflicts.
+Collapsing a branch or lowering depth never deletes saved descendants. Subtree/map deletion is
+an explicit confirmed action, and linked worlds survive deleting or detaching their source.
+
+Breadcrumbs and Back use core's actual visited-world path, not map ownership. Map cards can expand
+linked worlds, with terminal cycle/shared-reference rows. Every world remains independently
+available in All Maps regardless of how it was reached.
+
+Node drafts are retained while navigating, during asynchronous generation/saves, and after
+failures. Draft recovery is visible below the current page, including text from a deleted node.
+Drafts are **session-only** until applied: do not close the app with unapplied edits. The renderer
+registers a close guard for pending local work. A failed CAS never swaps in remote data or retries a stale snapshot with
+a newer revision. Explicitly reloading retains local node fields as drafts, but requires confirming
+the loss of unsaved structural changes, titles, links and collection changes.
+
+Renderer verification uses injected callback/IPC fixtures, pure state tests and React server
+rendering. These checks do not start Electron, a browser/dev server, sockets, real provider requests,
+OS credential storage or existing user data. Visual/runtime acceptance is not claimed.
 
 ### Local persistence
 

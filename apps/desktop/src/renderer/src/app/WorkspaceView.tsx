@@ -21,13 +21,13 @@ export function WorkspaceView({
   aiReady,
 }: {
   workspace: Workspace;
-  settings: ProviderSettingsProps;
+  settings: ProviderSettingsProps | null;
   aiReady: boolean;
 }) {
-  const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot);
+  const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const drafts = Object.values(state.drafts).filter((entry) => isDraftDirty(entry.draft));
-  const hasUnsaved = state.dirty || drafts.length > 0 || settings.dirty || settings.saving || state.generation !== null;
+  const hasUnsaved = state.dirty || drafts.length > 0 || settings?.dirty || settings?.saving || state.generation !== null || Object.keys(state.proposals).length > 0;
   useEffect(() => {
     void workspace.initialize();
   }, [workspace]);
@@ -76,13 +76,14 @@ export function WorkspaceView({
           {state.error && <Notice tone="error"><div className="section-heading"><span>{state.error}</span><button type="button" onClick={() => workspace.clearError()} aria-label="Dismiss error">Dismiss</button></div></Notice>}
           {state.saveError && <Notice tone="error"><p>{state.saveError} Local changes and typed drafts have not been replaced.</p>{state.storageConflict && <><p>Reloading keeps editable node text as drafts, but discards unsaved structural changes, titles, links and collection changes. There is no automatic overwrite.</p><div className="actions"><button type="button" disabled={state.loading} onClick={() => confirm('Reload the saved library?', <p>Your local node fields will remain as drafts for review. Unsaved map titles, deletions, links, collection and hierarchy changes will be discarded. Keep this window open if you need to record those changes first.</p>, 'Reload saved version', () => void workspace.reloadSaved())}>Reload saved version…</button></div></>}</Notice>}
           {state.generationStatus && <Notice><div className="section-heading"><span>{state.generationStatus}</span>{state.generation && <button type="button" onClick={() => void workspace.cancelGeneration()}>Cancel generation</button>}</div></Notice>}
+          {Object.keys(state.proposals).filter((id) => state.page !== 'world' || id !== mapId).map((id) => <Notice key={id}><div className="section-heading"><span>AI proposals are waiting in {library.documents.find((item) => item.map.id === id)?.map.title || 'another world'}.</span><button type="button" onClick={() => workspace.openWorld(id)}>Review proposals</button></div></Notice>)}
         </div>
         {state.page === 'library' && <LibraryPage library={library} collectionId={state.collectionId} query={state.query} expandedMapIds={state.expandedWorlds} disabled={disabled}
           onQuery={(query) => workspace.setQuery(query)} onCreateMap={create} onRenameMap={rename} onDeleteMap={deleteMap} onOrganizeMap={organize}
           onRenameCollection={(id) => name('Rename collection', 'Collection name', 'Rename collection', (value) => workspace.renameCollection(id, value), library.collections.find((item) => item.id === id)?.title)}
           onDeleteCollection={(id) => confirm('Delete this collection?', <p>Only this collection is removed. Every map stays in All Maps and in its other collections.</p>, 'Delete collection', () => workspace.deleteCollection(id))}
           onToggleWorld={(id) => workspace.toggleWorld(id)} onOpenWorld={(id, via) => workspace.openWorld(id, via)} />}
-        {state.page === 'settings' && <SettingsPage {...settings} />}
+        {state.page === 'settings' && (settings ? <SettingsPage {...settings} /> : <section className="settings-page"><h1>Settings</h1><Notice>Provider settings are not available in this build yet. Local map creation, editing and saving are available.</Notice></section>)}
         {state.page === 'world' && document && state.path && <WorldPage library={library} document={document} path={state.path} selectedNodeId={node?.id ?? null} expandedNodeIds={state.expandedNodes[document.map.id] ?? []} disabled={disabled}
           onSelect={(id) => workspace.selectNode(id)} onToggle={(id) => workspace.toggleNode(id)} onOpenWorld={(id) => workspace.followWorld(id)}
           onBreadcrumb={(index) => workspace.breadcrumb(index)} onBack={() => workspace.back()} onLibrary={() => workspace.showLibrary()}
@@ -92,7 +93,7 @@ export function WorkspaceView({
             document, node, draft, draftStale, disabled, generationBusy: state.generation !== null || !!proposal, aiReady,
             onChange: (fields) => workspace.changeDraft(document.map.id, node.id, fields),
             onApply: () => {
-              if (draftStale) confirm('Apply your draft over changed fields?', <p>Your draft will replace the current saved text, description and generation context for this node. Its current parent is kept.</p>, 'Apply my draft', () => { workspace.applyDraft(document.map.id, node.id, true); });
+              if (draftStale) confirm('Apply your draft over changed fields?', <><p>Your draft will replace the current saved text, description and generation context for this node. Its current parent is kept.</p><div className="comparison"><div><span className="eyebrow">CURRENT FIELDS</span><p>{node.text || 'Untitled node'}</p><p>{document.nodeMetadata.find((item) => item.nodeId === node.id)?.description}</p><p>{document.nodeMetadata.find((item) => item.nodeId === node.id)?.context.instructions}</p></div><div><span className="eyebrow">YOUR DRAFT</span><p>{draft.fields.text || 'Untitled node'}</p><p>{draft.fields.description}</p><p>{draft.fields.instructions}</p><p>Depth {draft.fields.depth} · {draft.fields.detail}</p></div></div></>, 'Apply my draft', () => { workspace.applyDraft(document.map.id, node.id, true); });
               else workspace.applyDraft(document.map.id, node.id);
             },
             onReset: () => confirm('Reset this node draft?', <p>Your unapplied edits will be replaced with this node's current saved fields.</p>, 'Reset draft', () => workspace.resetDraft(document.map.id, node.id)),

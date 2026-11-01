@@ -54,8 +54,8 @@ describe('isolated server-rendered UI, without launching an application', () => 
   it('shows explicit provider/model/key configuration and no invented working AI state', () => {
     const html = renderToStaticMarkup(createElement(ProviderSettings, {
       fields: { provider: 'openai-compatible', endpoint: '', model: '', keyAction: 'keep', apiKey: '' },
-      hasStoredKey: false, keyStorageAvailable: true, dirty: false, saving: false,
-      error: null, status: null, onChange: vi.fn(), onSave: vi.fn(),
+      hasStoredKey: false, loaded: true, loading: false, dirty: false, saving: false,
+      error: null, status: null, onChange: vi.fn(), onSave: vi.fn(), onRetryLoad: vi.fn(),
     }));
     expect(html).toContain('including DeepSeek');
     expect(html).toContain('Anthropic (native Messages API)');

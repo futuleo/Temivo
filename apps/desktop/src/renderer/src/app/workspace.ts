@@ -13,12 +13,13 @@ import {
   createNodeDraft, draftEdit, isDraftDirty, nodeFields, nodeFingerprint, visibleDepth,
 } from '../entities/map';
 import type { NodeDraft, NodeFields } from '../entities/map';
+import type { LibrarySnapshot } from '../../../shared/desktop-api';
 
 export interface WorkspacePorts {
-  load(): Promise<{ readonly revision: number; readonly library: MapLibrary }>;
-  save(library: MapLibrary, expectedRevision: number): Promise<{ readonly revision: number; readonly library: MapLibrary }>;
-  generate(request: GenerationRequest): Promise<readonly GenerationChange[]>;
-  cancel(mapId: string, sequence: number): Promise<void>;
+  load(): Promise<LibrarySnapshot>;
+  save(library: MapLibrary, expectedRevision: number): Promise<LibrarySnapshot>;
+  generate?(request: GenerationRequest): Promise<readonly GenerationChange[]>;
+  cancel?(mapId: string, sequence: number): Promise<void>;
   newId(): string;
 }
 
@@ -72,7 +73,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 export class Workspace {
   private state: WorkspaceState = {
-    library: null, revision: null, loading: false, saving: false, dirty: false,
+    library: null, revision: null, loading: true, saving: false, dirty: false,
     storageConflict: false, error: null, saveError: null, page: 'library',
     collectionId: null, query: '', path: null, selectedNodes: {}, expandedNodes: {},
     expandedWorlds: [], drafts: {}, proposals: {}, generation: null, generationStatus: null,
@@ -105,7 +106,12 @@ export class Workspace {
     this.update({ loading: true, error: null });
     try {
       const snapshot = await this.ports.load();
-      this.update({ library: snapshot.library, revision: snapshot.revision, loading: false });
+      this.update({
+        library: snapshot.library, revision: snapshot.revision, loading: false,
+        generationStatus: snapshot.library.documents.some((document) => document.activeGeneration !== null)
+          ? 'A previous generation did not finish in this session. Saved maps are unchanged; generate again when ready.'
+          : null,
+      });
     } catch (error) {
       this.update({ loading: false, error: errorMessage(error, 'Could not load your library. No data has been replaced.') });
     }
@@ -130,6 +136,7 @@ export class Workspace {
     }
     this.update({
       library, path, dirty: true, drafts, error: null,
+      proposals: Object.fromEntries(Object.entries(this.state.proposals).filter(([mapId]) => library.documents.some((document) => document.map.id === mapId))),
       page: this.state.page === 'world' && !path ? 'library' : this.state.page,
       collectionId: library.collections.some((item) => item.id === this.state.collectionId) ? this.state.collectionId : null,
     });
@@ -154,7 +161,11 @@ export class Workspace {
 
   private async persist(): Promise<boolean> {
     const { library, revision } = this.state;
-    if (!library || revision === null || !this.state.dirty) return true;
+    if (!library || revision === null) {
+      this.update({ error: 'The library must be loaded before it can be saved.' });
+      return false;
+    }
+    if (!this.state.dirty) return true;
     if (this.state.storageConflict) return false;
     this.update({ saving: true, saveError: null });
     try {
@@ -303,7 +314,10 @@ export class Workspace {
   applyDraft(mapId: string, nodeId: string, overwrite = false): boolean {
     const draft = this.getDraft(mapId, nodeId);
     const document = this.state.library?.documents.find((item) => item.map.id === mapId);
-    if (!draft || !document) return false;
+    if (!draft || !document) {
+      this.update({ error: 'The original map or node is no longer available. Any retained draft is in the recovery section.' });
+      return false;
+    }
     if (!overwrite && draft.base !== nodeFingerprint(document, nodeId)) {
       this.update({ error: 'Saved content changed. Review your draft and explicitly confirm replacing the saved fields.' });
       return false;
@@ -378,6 +392,11 @@ export class Workspace {
   }
 
   async generate(mapId: string, nodeId: string, mode: GenerationMode): Promise<void> {
+    const generate = this.ports.generate;
+    if (!generate) {
+      this.update({ error: 'AI generation is unavailable in this build. Local editing and saving still work.' });
+      return;
+    }
     if (this.state.generation || this.state.proposals[mapId]) {
       this.update({ error: 'Finish or cancel the current generation, and review or dismiss proposals before generating again.' });
       return;
@@ -393,7 +412,7 @@ export class Workspace {
       if (!await this.save()) throw new Error('Generation was not sent because saving failed. Your content has been kept.');
       if (!this.isCurrentGeneration(request)) return;
       this.update({ generationStatus: 'Waiting for your AI provider… You can keep editing drafts.' });
-      const changes = await this.ports.generate(request);
+      const changes = await generate(request);
       if (!this.isCurrentGeneration(request)) return;
       if (this.saveTask && !await this.saveTask) throw new Error('AI results were not applied because saving your current work failed. Retry saving, then generate again.');
       if (!this.isCurrentGeneration(request)) return;
@@ -422,7 +441,10 @@ export class Workspace {
     const request = this.state.generation;
     if (!request) return;
     this.update({ generation: null, generationStatus: 'Generation canceled. Existing content and drafts are unchanged.' });
-    try { await this.ports.cancel(request.mapId, request.sequence); }
+    try {
+      if (!this.ports.cancel) throw new Error('Provider cancellation is unavailable. Any late result will be ignored.');
+      await this.ports.cancel(request.mapId, request.sequence);
+    }
     catch (error) { this.update({ error: errorMessage(error, 'The provider could not confirm cancellation. Any late result will be ignored.') }); }
   }
 

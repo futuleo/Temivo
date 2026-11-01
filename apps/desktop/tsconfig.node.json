@@ -4,5 +4,5 @@
     "composite": true,
     "types": ["node"]
   },
-  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "src/renderer-architecture.test.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
 }
