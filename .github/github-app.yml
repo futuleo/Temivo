@@ -2,7 +2,11 @@ instructions: |
   Follow .github/copilot-instructions.md for architecture, product invariants,
   secret handling, validation, and agent selection.
   Keep work in the current checkout; do not commit, push, or switch branches
-  unless the user requests it.
+  unless the user requests it or the user accepted implementation work under the
+  coordinator workflow: then the assigned worker may commit and push its own task
+  branch, and only the coordinator may integrate it into main after independent
+  review and exact-SHA validation, without per-commit confirmations. Never create
+  a PR unless the user asks.
 
 scripts:
   - name: Check environment

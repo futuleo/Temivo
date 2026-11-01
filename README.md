@@ -125,7 +125,8 @@ Focused custom agents live in `.github/agents/`:
 
 | Agent | Model | Scope |
 | --- | --- | --- |
-| `reviewer` | `claude-opus-5.5` | Read-only review of substantial or risky changes. |
+| `coordinator` | `claude-sonnet-5.5` | Owns accepted tasks, assigns workers, gates and integrates. |
+| `reviewer` | `claude-opus-5.5` | Read-only review of substantial or risky changes; reports via `send_session_message`. |
 | `designer` | `claude-sonnet-5.5` | Scoped UI/UX implementation and accessibility. |
 | `checks` | `claude-haiku-5.5` | Run existing checks and report failures, without fixes. |
 
@@ -134,6 +135,25 @@ bounded task when useful, do not recursively delegate, and escalate ambiguous fa
 of looping with a lightweight model. Profiles request these models; actual availability and
 model selection support depend on the Copilot host and account. If a model is unavailable,
 select an available alternative explicitly rather than assuming a silent fallback.
+
+#### Coordinator workflow (no PRs)
+
+Start work by opening a session with the `coordinator` profile and accepting a task. Then:
+
+1. The coordinator starts a worker in an isolated worktree (native coordinated session, notified
+   on idle; no polling) and records task, session, branch, and base.
+2. The worker commits and pushes only its own branch and sends **READY**: task/session, branch,
+   exact head SHA, base SHA/ref, scope, validation results, blockers. Idle alone is not READY.
+3. The coordinator re-reads Git refs, then launches a different read-only `reviewer` on the exact
+   base/head SHAs. Findings or uncertainty go back to the worker; fixed SHAs are re-reviewed.
+4. After a clean review, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` must pass on the
+   exact SHA, plus applicable remote checks.
+5. The coordinator alone integrates, one branch at a time, by fast-forward after re-checking remote
+   `main`. If `main` advanced, the worker updates and revalidates, and the new SHA is re-reviewed.
+
+PRs are created only on request. Limitation: this relies on active local app/session
+coordination; it is not an always-on global watcher of arbitrary branches, and no schedule or
+daemon is configured.
 
 `pnpm test` includes dependency-free Node.js tests for hooks and the configuration helper,
 Vitest domain tests, SQLite persistence tests, and main/preload IPC contract tests.
