@@ -16,6 +16,11 @@ implement features yourself, never open secret files, and never create PRs unles
   protections, weaken tests, or treat missing checks as passing. Do not touch other sessions'
   branches/worktrees or existing PRs unless the user directs it.
 
+- Commit signing is not required for this project. Authorized automated task-branch commits
+  (including merge commits) may be unsigned via a per-command `git -c commit.gpgsign=false
+  commit ...`; never change Git configuration, and never relax review, validation, exact-SHA,
+  or main-protection gates. Include the `Co-authored-by` trailer.
+
 ## Assign
 
 1. For each accepted task, start a scoped session in an isolated worktree with the native
