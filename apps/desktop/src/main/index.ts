@@ -7,6 +7,7 @@ import { registerMindMapIpc } from './mind-map-ipc';
 import { SqliteMindMapRepository } from './mind-map-repository';
 
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL'];
+const ownedWindows = new Set<BrowserWindow>();
 
 function createMainWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -23,6 +24,8 @@ function createMainWindow(): void {
       webSecurity: true,
     },
   });
+  ownedWindows.add(mainWindow);
+  mainWindow.once('closed', () => ownedWindows.delete(mainWindow));
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
@@ -52,7 +55,8 @@ void app.whenReady().then(() => {
   const repository = new SqliteMindMapRepository(join(dataDirectory, 'temivo.sqlite'));
   app.once('quit', () => repository.close());
   registerMindMapIpc(repository, (event) =>
-    event.senderFrame === event.sender.mainFrame && BrowserWindow.fromWebContents(event.sender) !== null,
+    event.senderFrame !== null && event.senderFrame === event.sender.mainFrame &&
+    [...ownedWindows].some((window) => window.webContents === event.sender),
   );
 
   // The app does not need camera, microphone, notifications, etc. yet.

@@ -1,5 +1,7 @@
 import { expect, it, vi } from 'vitest';
 
+import { createMapLibrary } from '@temivo/core';
+
 import { MIND_MAP_CHANNELS } from '../shared/desktop-api';
 import type { DesktopApi } from '../shared/desktop-api';
 
@@ -20,7 +22,10 @@ it('exposes only the typed API and invokes fixed map channels', async () => {
   const [name, api] = exposed;
   expect(name).toBe('temivo');
   expect(Object.keys(api).sort()).toEqual(['maps', 'platform', 'versions']);
-  expect(Object.keys(api.maps).sort()).toEqual(['delete', 'get', 'getLinks', 'link', 'list', 'save', 'unlink']);
+  expect(Object.keys(api.maps).sort()).toEqual([
+    'delete', 'get', 'getLinks', 'link', 'list', 'loadLibrary', 'save', 'saveLibrary', 'unlink',
+  ]);
+  expect(Object.keys(api.versions).sort()).toEqual(['chrome', 'electron', 'node']);
 
   const map = { id: 'map', title: 'Topic', nodes: [] };
   const link = { sourceMapId: 'map', sourceNodeId: 'node', targetMapId: 'other' };
@@ -31,6 +36,9 @@ it('exposes only the typed API and invokes fixed map channels', async () => {
   await api.maps.getLinks('map');
   await api.maps.link(link);
   await api.maps.unlink('map', 'node');
+  const library = createMapLibrary();
+  await api.maps.loadLibrary();
+  await api.maps.saveLibrary(library, 42);
   expect(bridge.invoke.mock.calls).toEqual([
     [MIND_MAP_CHANNELS.list],
     [MIND_MAP_CHANNELS.get, 'map'],
@@ -39,5 +47,7 @@ it('exposes only the typed API and invokes fixed map channels', async () => {
     [MIND_MAP_CHANNELS.getLinks, 'map'],
     [MIND_MAP_CHANNELS.link, link],
     [MIND_MAP_CHANNELS.unlink, 'map', 'node'],
+    [MIND_MAP_CHANNELS.loadLibrary],
+    [MIND_MAP_CHANNELS.saveLibrary, library, 42],
   ]);
 });
