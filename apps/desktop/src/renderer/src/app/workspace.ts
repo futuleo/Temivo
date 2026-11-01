@@ -54,11 +54,11 @@ export interface WorkspaceState {
   readonly collectionId: string | null;
   readonly query: string;
   readonly path: NavigationPath | null;
-  readonly selectedNodes: Readonly<Record<string, string>>;
-  readonly expandedNodes: Readonly<Record<string, readonly string[]>>;
+  readonly selectedNodes: ReadonlyMap<string, string>;
+  readonly expandedNodes: ReadonlyMap<string, readonly string[]>;
   readonly expandedWorlds: readonly string[];
-  readonly drafts: Readonly<Record<string, DraftEntry>>;
-  readonly proposals: Readonly<Record<string, ProposalEntry>>;
+  readonly drafts: ReadonlyMap<string, DraftEntry>;
+  readonly proposals: ReadonlyMap<string, ProposalEntry>;
   readonly generation: GenerationRequest | null;
   readonly generationStatus: string | null;
 }
@@ -75,8 +75,8 @@ export class Workspace {
   private state: WorkspaceState = {
     library: null, revision: null, loading: true, saving: false, dirty: false,
     storageConflict: false, error: null, saveError: null, page: 'library',
-    collectionId: null, query: '', path: null, selectedNodes: {}, expandedNodes: {},
-    expandedWorlds: [], drafts: {}, proposals: {}, generation: null, generationStatus: null,
+    collectionId: null, query: '', path: null, selectedNodes: new Map(), expandedNodes: new Map(),
+    expandedWorlds: [], drafts: new Map(), proposals: new Map(), generation: null, generationStatus: null,
   };
   private readonly listeners = new Set<() => void>();
   private loadTask: Promise<void> | null = null;
@@ -127,16 +127,16 @@ export class Workspace {
 
   private setLibrary(library: MapLibrary): void {
     const path = this.state.path ? reconcileNavigation(library, this.state.path) : null;
-    const drafts = { ...this.state.drafts };
-    for (const [key, entry] of Object.entries(drafts)) {
+    const drafts = new Map(this.state.drafts);
+    for (const [key, entry] of drafts) {
       const document = library.documents.find((item) => item.map.id === entry.mapId);
       if (document?.map.nodes.some((node) => node.id === entry.nodeId) && !isDraftDirty(entry.draft)) {
-        drafts[key] = { ...entry, draft: createNodeDraft(document, entry.nodeId) };
+        drafts.set(key, { ...entry, draft: createNodeDraft(document, entry.nodeId) });
       }
     }
     this.update({
       library, path, dirty: true, drafts, error: null,
-      proposals: Object.fromEntries(Object.entries(this.state.proposals).filter(([mapId]) => library.documents.some((document) => document.map.id === mapId))),
+      proposals: new Map([...this.state.proposals].filter(([mapId]) => library.documents.some((document) => document.map.id === mapId))),
       page: this.state.page === 'world' && !path ? 'library' : this.state.page,
       collectionId: library.collections.some((item) => item.id === this.state.collectionId) ? this.state.collectionId : null,
     });
@@ -188,21 +188,22 @@ export class Workspace {
     await this.cancelGeneration();
     try {
       const snapshot = await this.ports.load();
-      const drafts = { ...this.state.drafts };
+      const drafts = new Map(this.state.drafts);
       for (const document of this.state.library?.documents ?? []) {
         const remote = snapshot.library.documents.find((item) => item.map.id === document.map.id);
         for (const node of document.map.nodes) {
           const key = draftKey(document.map.id, node.id);
-          if (drafts[key] && isDraftDirty(drafts[key].draft)) continue;
+          const draft = drafts.get(key);
+          if (draft && isDraftDirty(draft.draft)) continue;
           if (remote && nodeFingerprint(document, node.id) === nodeFingerprint(remote, node.id)) continue;
           const local = createNodeDraft(document, node.id);
           const original = remote?.map.nodes.some((item) => item.id === node.id) ? nodeFields(remote, node.id) : {
             text: '', description: '', instructions: '', detail: 'brief' as const, depth: '1',
           };
-          drafts[key] = { mapId: document.map.id, nodeId: node.id, draft: { ...local, original } };
+          drafts.set(key, { mapId: document.map.id, nodeId: node.id, draft: { ...local, original } });
         }
       }
-      this.update({ drafts, proposals: {}, generationStatus: null });
+      this.update({ drafts, proposals: new Map(), generationStatus: null });
       this.setLibrary(snapshot.library);
       this.update({ revision: snapshot.revision, loading: false, dirty: false, storageConflict: false, saveError: null });
     } catch (error) {
@@ -239,17 +240,17 @@ export class Workspace {
     this.update({ path, page: 'world' });
     const document = this.currentDocument();
     if (!document) return;
-    const expandedNodes = { ...this.state.expandedNodes };
-    if (!expandedNodes[document.map.id]) {
+    const expandedNodes = new Map(this.state.expandedNodes);
+    if (!expandedNodes.has(document.map.id)) {
       let expanded: readonly string[] = [];
       for (const root of document.map.nodes.filter((node) => node.parentId === null)) {
         const depth = document.nodeMetadata.find((item) => item.nodeId === root.id)?.context.depth ?? 1;
         expanded = visibleDepth(document, expanded, root.id, depth);
       }
-      expandedNodes[document.map.id] = expanded;
+      expandedNodes.set(document.map.id, expanded);
     }
     this.update({ expandedNodes });
-    const selected = this.state.selectedNodes[document.map.id];
+    const selected = this.state.selectedNodes.get(document.map.id);
     const nodeId = selected && document.map.nodes.some((node) => node.id === selected) ? selected : document.map.nodes[0]?.id;
     if (nodeId) this.selectNode(nodeId);
   }
@@ -272,42 +273,41 @@ export class Workspace {
     const document = this.currentDocument();
     if (!document || !document.map.nodes.some((node) => node.id === nodeId)) return;
     const key = draftKey(document.map.id, nodeId);
-    const expanded = new Set(this.state.expandedNodes[document.map.id] ?? []);
+    const expanded = new Set(this.state.expandedNodes.get(document.map.id) ?? []);
     let node = document.map.nodes.find((item) => item.id === nodeId);
     while (node?.parentId) {
       expanded.add(node.parentId);
       node = document.map.nodes.find((item) => item.id === node?.parentId);
     }
     this.update({
-      selectedNodes: { ...this.state.selectedNodes, [document.map.id]: nodeId },
-      expandedNodes: { ...this.state.expandedNodes, [document.map.id]: [...expanded] },
-      drafts: {
-        ...this.state.drafts,
-        [key]: this.state.drafts[key] ?? { mapId: document.map.id, nodeId, draft: createNodeDraft(document, nodeId) },
-      },
+      selectedNodes: new Map(this.state.selectedNodes).set(document.map.id, nodeId),
+      expandedNodes: new Map(this.state.expandedNodes).set(document.map.id, [...expanded]),
+      drafts: new Map(this.state.drafts).set(key, this.state.drafts.get(key) ?? {
+        mapId: document.map.id, nodeId, draft: createNodeDraft(document, nodeId),
+      }),
     });
   }
 
   getDraft(mapId: string, nodeId: string): NodeDraft | undefined {
-    return this.state.drafts[draftKey(mapId, nodeId)]?.draft;
+    return this.state.drafts.get(draftKey(mapId, nodeId))?.draft;
   }
 
   changeDraft(mapId: string, nodeId: string, fields: NodeFields): void {
     const key = draftKey(mapId, nodeId);
-    const entry = this.state.drafts[key];
-    if (entry) this.update({ drafts: { ...this.state.drafts, [key]: { ...entry, draft: { ...entry.draft, fields } } } });
+    const entry = this.state.drafts.get(key);
+    if (entry) this.update({ drafts: new Map(this.state.drafts).set(key, { ...entry, draft: { ...entry.draft, fields } }) });
   }
 
   resetDraft(mapId: string, nodeId: string): void {
     const document = this.state.library?.documents.find((item) => item.map.id === mapId);
     if (!document?.map.nodes.some((node) => node.id === nodeId)) return;
     const key = draftKey(mapId, nodeId);
-    this.update({ drafts: { ...this.state.drafts, [key]: { mapId, nodeId, draft: createNodeDraft(document, nodeId) } } });
+    this.update({ drafts: new Map(this.state.drafts).set(key, { mapId, nodeId, draft: createNodeDraft(document, nodeId) }) });
   }
 
   discardDraft(mapId: string, nodeId: string): void {
-    const drafts = { ...this.state.drafts };
-    delete drafts[draftKey(mapId, nodeId)];
+    const drafts = new Map(this.state.drafts);
+    drafts.delete(draftKey(mapId, nodeId));
     this.update({ drafts });
   }
 
@@ -330,8 +330,8 @@ export class Workspace {
       const key = draftKey(mapId, nodeId);
       this.setLibrary(library);
       this.update({
-        drafts: { ...this.state.drafts, [key]: { mapId, nodeId, draft: createNodeDraft(next, nodeId) } },
-        expandedNodes: { ...this.state.expandedNodes, [mapId]: visibleDepth(next, this.state.expandedNodes[mapId] ?? [], nodeId, Number(draft.fields.depth)) },
+        drafts: new Map(this.state.drafts).set(key, { mapId, nodeId, draft: createNodeDraft(next, nodeId) }),
+        expandedNodes: new Map(this.state.expandedNodes).set(mapId, visibleDepth(next, this.state.expandedNodes.get(mapId) ?? [], nodeId, Number(draft.fields.depth))),
       });
       void this.save();
       return true;
@@ -344,8 +344,8 @@ export class Workspace {
   toggleNode(nodeId: string): void {
     const mapId = this.currentDocument()?.map.id;
     if (!mapId) return;
-    const expanded = this.state.expandedNodes[mapId] ?? [];
-    this.update({ expandedNodes: { ...this.state.expandedNodes, [mapId]: expanded.includes(nodeId) ? expanded.filter((id) => id !== nodeId) : [...expanded, nodeId] } });
+    const expanded = this.state.expandedNodes.get(mapId) ?? [];
+    this.update({ expandedNodes: new Map(this.state.expandedNodes).set(mapId, expanded.includes(nodeId) ? expanded.filter((id) => id !== nodeId) : [...expanded, nodeId]) });
   }
 
   toggleWorld(mapId: string): void {
@@ -397,7 +397,7 @@ export class Workspace {
     const document = library.documents.find((item) => item.map.id === plan.request.mapId);
     if (!document) return;
     const liveIds = new Set(document.map.nodes.map((node) => node.id));
-    const dirtyIds = new Set(Object.values(this.state.drafts)
+    const dirtyIds = new Set([...this.state.drafts.values()]
       .filter((entry) => entry.mapId === document.map.id && liveIds.has(entry.nodeId) && isDraftDirty(entry.draft))
       .map((entry) => entry.nodeId));
     if (dirtyIds.size === 0) return;
@@ -415,7 +415,7 @@ export class Workspace {
   }
 
   async generate(mapId: string, nodeId: string, mode: GenerationMode): Promise<void> {
-    if (this.state.generation || this.state.proposals[mapId]) {
+    if (this.state.generation || this.state.proposals.has(mapId)) {
       this.update({ error: 'Finish or cancel the current generation, and review or dismiss proposals before generating again.' });
       return;
     }
@@ -439,15 +439,14 @@ export class Workspace {
       this.protectUnappliedDrafts(current, plan);
       const result = applyGenerationPlan(current, plan);
       this.setLibrary(result.library);
-      const proposals = { ...this.state.proposals };
-      if (result.pendingConflicts) proposals[mapId] = { pending: result.pendingConflicts, selectedIds: [] };
+      const proposals = new Map(this.state.proposals);
+      if (result.pendingConflicts) proposals.set(mapId, { pending: result.pendingConflicts, selectedIds: [] });
       const generatedDocument = result.library.documents.find((document) => document.map.id === mapId);
       this.update({
         proposals, generation: null,
-        expandedNodes: generatedDocument ? {
-          ...this.state.expandedNodes,
-          [mapId]: visibleDepth(generatedDocument, this.state.expandedNodes[mapId] ?? [], nodeId, request.requestedDepth),
-        } : this.state.expandedNodes,
+        expandedNodes: generatedDocument
+          ? new Map(this.state.expandedNodes).set(mapId, visibleDepth(generatedDocument, this.state.expandedNodes.get(mapId) ?? [], nodeId, request.requestedDepth))
+          : this.state.expandedNodes,
         generationStatus: result.pendingConflicts ? 'Safe AI changes applied locally. Protected content is waiting for your review.' : 'AI generation applied locally.',
       });
       await this.save();
@@ -466,14 +465,14 @@ export class Workspace {
   }
 
   toggleProposal(mapId: string, nodeId: string): void {
-    const entry = this.state.proposals[mapId];
+    const entry = this.state.proposals.get(mapId);
     if (!entry) return;
     const selectedIds = entry.selectedIds.includes(nodeId) ? entry.selectedIds.filter((id) => id !== nodeId) : [...entry.selectedIds, nodeId];
-    this.update({ proposals: { ...this.state.proposals, [mapId]: { ...entry, selectedIds } } });
+    this.update({ proposals: new Map(this.state.proposals).set(mapId, { ...entry, selectedIds }) });
   }
 
   approveProposals(mapId: string): boolean {
-    const entry = this.state.proposals[mapId];
+    const entry = this.state.proposals.get(mapId);
     if (!entry) return false;
     if (!this.change((library) => approveGenerationConflicts(library, entry.pending, entry.selectedIds))) return false;
     this.dismissProposals(mapId);
@@ -481,8 +480,8 @@ export class Workspace {
   }
 
   dismissProposals(mapId: string): void {
-    const proposals = { ...this.state.proposals };
-    delete proposals[mapId];
+    const proposals = new Map(this.state.proposals);
+    proposals.delete(mapId);
     this.update({ proposals });
   }
 }

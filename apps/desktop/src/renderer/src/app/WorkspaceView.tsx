@@ -26,8 +26,8 @@ export function WorkspaceView({
 }) {
   const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
   const [dialog, setDialog] = useState<Dialog | null>(null);
-  const drafts = Object.values(state.drafts).filter((entry) => isDraftDirty(entry.draft));
-  const hasUnsaved = state.dirty || drafts.length > 0 || settings.dirty || settings.saving || state.generation !== null || Object.keys(state.proposals).length > 0;
+  const drafts = [...state.drafts.values()].filter((entry) => isDraftDirty(entry.draft));
+  const hasUnsaved = state.dirty || drafts.length > 0 || settings.dirty || settings.saving || state.generation !== null || state.proposals.size > 0;
   useEffect(() => {
     void workspace.initialize();
   }, [workspace]);
@@ -46,11 +46,11 @@ export function WorkspaceView({
   const disabled = state.saving || state.loading || state.storageConflict;
   const document = workspace.currentDocument();
   const mapId = document?.map.id;
-  const nodeId = mapId ? state.selectedNodes[mapId] : undefined;
+  const nodeId = mapId ? state.selectedNodes.get(mapId) : undefined;
   const node = document?.map.nodes.find((item) => item.id === nodeId);
   const draft = mapId && nodeId ? workspace.getDraft(mapId, nodeId) : undefined;
   const draftStale = !!(document && node && draft && draft.base !== nodeFingerprint(document, node.id));
-  const proposal = mapId ? state.proposals[mapId] : undefined;
+  const proposal = mapId ? state.proposals.get(mapId) : undefined;
   const closeDialog = () => setDialog(null);
   const confirm = (title: string, body: ReactNode, confirmLabel: string, onConfirm: () => void) => setDialog({ kind: 'confirm', title, body, confirmLabel, onConfirm });
   const name = (title: string, label: string, submitLabel: string, onSubmit: (value: string) => void, value?: string) => setDialog({ kind: 'name', title, label, submitLabel, onSubmit, value });
@@ -76,7 +76,7 @@ export function WorkspaceView({
           {state.error && <Notice tone="error"><div className="section-heading"><span>{state.error}</span><button type="button" onClick={() => workspace.clearError()} aria-label="Dismiss error">Dismiss</button></div></Notice>}
           {state.saveError && <Notice tone="error"><p>{state.saveError} Local changes and typed drafts have not been replaced.</p>{state.storageConflict && <><p>Reloading keeps editable node text as drafts, but discards unsaved structural changes, titles, links and collection changes. There is no automatic overwrite.</p><div className="actions"><button type="button" disabled={state.loading} onClick={() => confirm('Reload the saved library?', <p>Your local node fields will remain as drafts for review. Unsaved map titles, deletions, links, collection and hierarchy changes will be discarded. Keep this window open if you need to record those changes first.</p>, 'Reload saved version', () => void workspace.reloadSaved())}>Reload saved version…</button></div></>}</Notice>}
           {state.generationStatus && <Notice><div className="section-heading"><span>{state.generationStatus}</span>{state.generation && <button type="button" onClick={() => void workspace.cancelGeneration()}>Cancel generation</button>}</div></Notice>}
-          {Object.keys(state.proposals).filter((id) => state.page !== 'world' || id !== mapId).map((id) => <Notice key={id}><div className="section-heading"><span>AI proposals are waiting in {library.documents.find((item) => item.map.id === id)?.map.title || 'another world'}.</span><button type="button" onClick={() => workspace.openWorld(id)}>Review proposals</button></div></Notice>)}
+          {[...state.proposals.keys()].filter((id) => state.page !== 'world' || id !== mapId).map((id) => <Notice key={id}><div className="section-heading"><span>AI proposals are waiting in {library.documents.find((item) => item.map.id === id)?.map.title || 'another world'}.</span><button type="button" onClick={() => workspace.openWorld(id)}>Review proposals</button></div></Notice>)}
         </div>
         {state.page === 'library' && <LibraryPage library={library} collectionId={state.collectionId} query={state.query} expandedMapIds={state.expandedWorlds} disabled={disabled}
           onQuery={(query) => workspace.setQuery(query)} onCreateMap={create} onRenameMap={rename} onDeleteMap={deleteMap} onOrganizeMap={organize}
@@ -84,7 +84,7 @@ export function WorkspaceView({
           onDeleteCollection={(id) => confirm('Delete this collection?', <p>Only this collection is removed. Every map stays in All Maps and in its other collections.</p>, 'Delete collection', () => workspace.deleteCollection(id))}
           onToggleWorld={(id) => workspace.toggleWorld(id)} onOpenWorld={(id, via) => workspace.openWorld(id, via)} />}
         {state.page === 'settings' && <SettingsPage {...settings} />}
-        {state.page === 'world' && document && state.path && <WorldPage library={library} document={document} path={state.path} selectedNodeId={node?.id ?? null} expandedNodeIds={state.expandedNodes[document.map.id] ?? []} disabled={disabled}
+        {state.page === 'world' && document && state.path && <WorldPage library={library} document={document} path={state.path} selectedNodeId={node?.id ?? null} expandedNodeIds={state.expandedNodes.get(document.map.id) ?? []} disabled={disabled}
           onSelect={(id) => workspace.selectNode(id)} onToggle={(id) => workspace.toggleNode(id)} onOpenWorld={(id) => workspace.followWorld(id)}
           onBreadcrumb={(index) => workspace.breadcrumb(index)} onBack={() => workspace.back()} onLibrary={() => workspace.showLibrary()}
           onAddRoot={() => name('Add a root node', 'Node text', 'Add node', (text) => workspace.addNode(document.map.id, null, text))}

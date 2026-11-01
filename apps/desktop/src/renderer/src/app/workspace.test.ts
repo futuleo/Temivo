@@ -37,11 +37,50 @@ async function setup(overrides: Partial<WorkspacePorts> = {}, initial = fixture(
   };
   const workspace = new Workspace(ports);
   await workspace.initialize();
-  workspace.openWorld('one');
+  workspace.openWorld(initial.documents[0]?.map.id ?? 'one');
   return { workspace, ports };
 }
 
 describe('renderer workspace with isolated injected ports', () => {
+  it.each(['constructor', 'toString', '__proto__'])('supports the valid map/node identifier %s throughout navigation and generation', async (id) => {
+    let initial = createMapLibrary([createTopicMap(id, id, `World ${id}`), createTopicMap('other-world', 'root', 'Other world')]);
+    initial = addNode(initial, id, { id: 'manual', parentId: id, text: 'My branch' });
+    initial = linkMaps(initial, { sourceMapId: id, sourceNodeId: id, targetMapId: 'other-world' });
+    const { workspace, ports } = await setup({
+      generate: vi.fn<WorkspacePorts['generate']>(async () => [
+        { kind: 'upsert', nodeId: 'new-ai', parentId: id, text: 'New AI content', description: '' },
+        { kind: 'upsert', nodeId: 'manual', parentId: id, text: 'Explicit proposal', description: '' },
+      ]),
+    }, initial);
+    expect(workspace.getSnapshot().error).toBeNull();
+    expect(workspace.getDraft(id, id)).toBeDefined();
+    workspace.changeDraft(id, id, { ...workspace.getDraft(id, id)!.fields, description: 'Preserved context' });
+    expect(workspace.applyDraft(id, id)).toBe(true);
+    await workspace.save();
+    await workspace.generate(id, id, 'refresh');
+    expect(ports.generate).toHaveBeenCalledOnce();
+    expect(workspace.currentDocument()?.map.nodes.some((node) => node.id === 'new-ai')).toBe(true);
+    workspace.toggleProposal(id, 'manual');
+    expect(workspace.approveProposals(id)).toBe(true);
+    await workspace.save();
+    expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'manual')?.text).toBe('Explicit proposal');
+    workspace.followWorld(id);
+    expect(workspace.currentDocument()?.map.id).toBe('other-world');
+    workspace.back();
+    expect(workspace.currentDocument()?.map.id).toBe(id);
+    workspace.showLibrary();
+    workspace.openWorld(id);
+    expect(workspace.getSnapshot().error).toBeNull();
+    expect(workspace.getDraft(id, id)?.fields.description).toBe('Preserved context');
+    workspace.changeDraft(id, id, { ...workspace.getDraft(id, id)!.fields, text: 'Unapplied during reload' });
+    await workspace.reloadSaved();
+    workspace.openWorld(id);
+    expect(workspace.getDraft(id, id)?.fields.text).toBe('Unapplied during reload');
+    expect(workspace.getSnapshot().selectedNodes.get(id)).toBe(id);
+    expect(workspace.getSnapshot().expandedNodes.get(id)).toContain(id);
+    expect(workspace.getSnapshot().proposals.size).toBe(0);
+  });
+
   it('does not replace a failed load with a fake empty library', async () => {
     const { workspace } = await setup({ load: async () => { throw new DesktopPortError('STORAGE_ERROR', 'Storage is unavailable.'); } });
     expect(workspace.getSnapshot().library).toBeNull();
@@ -138,13 +177,13 @@ describe('renderer workspace with isolated injected ports', () => {
     expect(firstSave?.[0].documents.find((document) => document.map.id === 'one')?.activeGeneration).toMatchObject({ anchorNodeId: 'root' });
     expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'ai-new')?.text).toBe('AI branch');
     expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'manual')?.text).toBe('My work');
-    expect(workspace.getSnapshot().proposals['one']?.pending.conflicts).toHaveLength(1);
+    expect(workspace.getSnapshot().proposals.get('one')?.pending.conflicts).toHaveLength(1);
     workspace.toggleProposal('one', 'manual');
     expect(workspace.approveProposals('one')).toBe(true);
     await workspace.save();
     expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'manual')?.text).toBe('Proposed rewrite');
     expect(workspace.getSnapshot().library?.documents).toHaveLength(2);
-    expect(workspace.getSnapshot().proposals['one']).toBeUndefined();
+    expect(workspace.getSnapshot().proposals.get('one')).toBeUndefined();
   });
 
   it('does not automatically update an AI node that acquired an unapplied draft during generation', async () => {
@@ -168,7 +207,7 @@ describe('renderer workspace with isolated injected ports', () => {
     await workspace.save();
     await workspace.generate('one', 'root', 'refresh');
     expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'ai')?.text).toBe('Currently typing');
-    expect(workspace.getSnapshot().proposals['one']?.pending.conflicts).toContainEqual({ nodeId: 'ai', reason: 'manual-or-edited' });
+    expect(workspace.getSnapshot().proposals.get('one')?.pending.conflicts).toContainEqual({ nodeId: 'ai', reason: 'manual-or-edited' });
   });
 
   it('cancels before dispatch while begun state is still being saved, without a late provider request', async () => {
@@ -247,7 +286,7 @@ describe('renderer workspace with isolated injected ports', () => {
     expect(workspace.approveProposals('one')).toBe(false);
     expect(workspace.getSnapshot().error).toContain('stale');
     expect(workspace.currentDocument()?.map.nodes.find((node) => node.id === 'manual')?.text).toBe('My work');
-    expect(workspace.getSnapshot().proposals['one']).toBeDefined();
+    expect(workspace.getSnapshot().proposals.get('one')).toBeDefined();
   });
 
   it('rejects late generation after an applied edit and ignores locally canceled responses', async () => {
@@ -311,9 +350,9 @@ describe('renderer workspace with isolated injected ports', () => {
     workspace.changeDraft('one', 'manual', { ...workspace.getDraft('one', 'manual')!.fields, text: 'Draft during move' });
     workspace.reparent('one', 'manual', 'nested');
     await workspace.save();
-    const rows = projectNodes(workspace.currentDocument()!, workspace.getSnapshot().expandedNodes['one'] ?? []);
+    const rows = projectNodes(workspace.currentDocument()!, workspace.getSnapshot().expandedNodes.get('one') ?? []);
     expect(rows.some((row) => row.node.id === 'manual')).toBe(true);
-    expect(workspace.getSnapshot().selectedNodes['one']).toBe('manual');
+    expect(workspace.getSnapshot().selectedNodes.get('one')).toBe('manual');
     expect(workspace.getDraft('one', 'manual')?.fields.text).toBe('Draft during move');
   });
 
