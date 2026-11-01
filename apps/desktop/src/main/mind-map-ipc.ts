@@ -1,14 +1,15 @@
 import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 
-import { assertMapId, assertMapLink, assertMindMap, InvalidMindMapError } from '@temivo/core';
-import type { MindMapRepository } from '@temivo/core';
+import { assertMapId, assertMapLibrary, assertMapLink, assertMindMap, InvalidMindMapError } from '@temivo/core';
 
 import { MIND_MAP_CHANNELS } from '../shared/desktop-api';
 import type { DesktopResult } from '../shared/desktop-api';
+import { assertStorageRevision, LegacyLibraryWriteError, LibraryVersionConflictError } from './mind-map-repository';
+import type { LibraryRepository } from './mind-map-repository';
 
 export function registerMindMapIpc(
-  repository: MindMapRepository,
+  repository: LibraryRepository,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
 ): void {
   function handle<T>(channel: string, action: (...args: unknown[]) => Promise<T>): void {
@@ -20,6 +21,16 @@ export function registerMindMapIpc(
       try {
         return { ok: true, value: await action(...args) };
       } catch (error) {
+        if (error instanceof LibraryVersionConflictError || error instanceof LegacyLibraryWriteError) {
+          console.warn('Rejected an unsafe or outdated library write.');
+          return {
+            ok: false,
+            error: {
+              code: error instanceof LibraryVersionConflictError ? 'VERSION_CONFLICT' : 'LIBRARY_REQUIRED',
+              message: error.message,
+            },
+          };
+        }
         if (error instanceof InvalidMindMapError) {
           console.warn('Rejected invalid maps input.');
           return { ok: false, error: { code: 'INVALID_INPUT', message: error.message } };
@@ -30,6 +41,12 @@ export function registerMindMapIpc(
     });
   }
 
+  handle(MIND_MAP_CHANNELS.loadLibrary, () => repository.loadLibrary());
+  handle(MIND_MAP_CHANNELS.saveLibrary, (library, expectedRevision) => {
+    assertMapLibrary(library);
+    assertStorageRevision(expectedRevision);
+    return repository.saveLibrary(library, expectedRevision);
+  });
   handle(MIND_MAP_CHANNELS.list, () => repository.list());
   handle(MIND_MAP_CHANNELS.get, (id) => {
     assertMapId(id);

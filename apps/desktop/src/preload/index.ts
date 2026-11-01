@@ -5,6 +5,8 @@ import type { DesktopApi } from '../shared/desktop-api';
 
 const api: DesktopApi = {
   maps: {
+    loadLibrary: () => ipcRenderer.invoke(MIND_MAP_CHANNELS.loadLibrary),
+    saveLibrary: (library, expectedRevision) => ipcRenderer.invoke(MIND_MAP_CHANNELS.saveLibrary, library, expectedRevision),
     list: () => ipcRenderer.invoke(MIND_MAP_CHANNELS.list),
     get: (id) => ipcRenderer.invoke(MIND_MAP_CHANNELS.get, id),
     save: (map) => ipcRenderer.invoke(MIND_MAP_CHANNELS.save, map),

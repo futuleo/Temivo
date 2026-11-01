@@ -89,11 +89,11 @@ context, provenance/baselines, revisions and retired node identities. A library 
 documents, links, flat collections and retired map identities. `assertMapDocument` and
 `assertMapLibrary` validate complete snapshots. All public APIs are exported from `@temivo/core`.
 
-**This state is not persisted yet.** The current `MindMapRepository`, SQLite adapter and maps IPC
-still support only the original basic model. `createMapDocument(legacyMap)` explicitly imports a
-basic map as user-authored content; there is no rich-state save port or lossy export adapter.
-Do not save `document.map` and assume its sibling metadata, collections or generation state were
-saved. A later phase must add migrations/adapters before any UI relies on rich-state durability.
+The desktop persists the **complete library** with a separate optimistic storage revision (see
+Local persistence below). `createMapDocument(legacyMap)` explicitly imports a basic map as
+user-authored content. The legacy `MindMapRepository` DTO remains unchanged; it is not a rich-state
+write port. Do not save `document.map`: its sibling metadata, collections and generation state
+cannot be represented by that DTO.
 
 Operations return immutable snapshots and never mutate their inputs; callers must retain the
 returned library and treat readonly values as immutable (core does not deep-freeze them at runtime).
@@ -160,21 +160,48 @@ optimistic concurrency data, not security credentials.
 
 The Electron main process stores maps in `temivo.sqlite` under Electron's per-user `userData`
 directory, not the checkout. It uses Node's built-in `node:sqlite` (also available in the pinned
-Electron runtime), with foreign keys, WAL journaling, transactional map saves, and versioned,
-transactional schema migrations. A database from a newer schema version is rejected, never reset.
-Startup failures are reported without deleting or replacing existing storage.
+Electron runtime), WAL journaling, and versioned, transactional migrations. Schema **v2** has one
+authoritative `map_library` row: the complete validated `MapLibrary` JSON and a nonnegative safe
+integer storage revision. It preserves document/node revisions, descriptions, generation context,
+AI provenance/baselines, retired identities, active generation tokens, independent links and flat
+many-to-many collections. It does not duplicate a second basic-map store.
 
-The desktop implements core's `MindMapRepository` interface; a future mobile app can supply its
-own adapter. Links are separate rows. A source node has at most one outgoing map link; linking
-again replaces that link. Detaching, removing the source node, or deleting the source map does
-not delete the target. Deleting a target removes incoming links, not their source maps.
+On first open, a current v1 database is imported in one transaction. Every legacy map, node and
+link is validated; node order and empty content are retained, and old nodes become user-authored
+with default metadata via `createMapDocument`. Only then are the old tables removed and the
+schema version advanced. Invalid persisted state, an unsupported/newer schema, or an unversioned
+nonempty database fails explicitly; failures never reset or replace storage. Failed migrations
+and writes roll back, including the version/revision. Startup errors are reported without opening
+the renderer.
 
-Renderer code uses `window.temivo.maps` through the preload bridge: `list`, `get`, `save`, `delete`,
-`getLinks`, `link`, and `unlink`. Results are `{ ok: true, value }` or
-`{ ok: false, error: { code, message } }`; callers must handle failures. Failure codes are
-`INVALID_INPUT`, `FORBIDDEN`, and `STORAGE_ERROR`. Main validates inputs, rejects untrusted frames,
-and keeps raw database errors out of IPC responses. No database path, raw IPC, Node.js objects,
-or credentials are exposed to the renderer.
+Renderer code uses only fixed channels through `window.temivo.maps`:
+
+| Method | Contract |
+| --- | --- |
+| `loadLibrary()` | Returns `{ revision, library }`, validating the complete stored snapshot. |
+| `saveLibrary(library, expectedRevision)` | Validates the complete library, atomically compares the expected **storage** revision and saves with the next revision. Returns the committed snapshot. Retired IDs cannot be discarded or reused, and deleted map/node identities must be retired. |
+| `list()`, `get(id)`, `getLinks(sourceMapId)` | Legacy read-only projections of the same authoritative library, with the original DTOs. |
+| `save`, `delete`, `link`, `unlink` | **Intentional write-API transition:** valid legacy writes fail with `LIBRARY_REQUIRED`, directing callers to the versioned library API. They never alter data or the revision, even for newly created maps. Their tokenless, basic DTOs cannot safely write rich state. |
+
+Load a snapshot, apply immutable core operations to its library, then save with its storage
+revision. Document/node revisions are domain guards, not storage CAS tokens. A stale save returns
+`VERSION_CONFLICT`: reload and explicitly reconcile/reapply the intended operation; do not retry
+the old whole-library snapshot with a newer revision. Persist `beginGeneration`'s updated library
+before dispatching work, and use core's stale-generation/snapshot guards on completion.
+Unlink/source deletion never deletes target maps; deleting a target cleans incoming references
+and collection memberships through the core operations before saving.
+
+Results are `{ ok: true, value }` or `{ ok: false, error: { code, message } }`; callers must handle
+failures. Codes are `INVALID_INPUT`, `FORBIDDEN`, `VERSION_CONFLICT`, `LIBRARY_REQUIRED`, and
+`STORAGE_ERROR`. Corrupt persisted structure is a storage error, not invalid renderer input.
+Main authorizes an app-owned live window's main frame **before** repository access, validates
+runtime input, and keeps raw database errors out of IPC responses. No database path, raw IPC,
+Node.js objects, filesystem/SQL access or credentials are exposed.
+
+Persistence/IPC verification uses isolated temporary SQLite fixtures and mocked Electron,
+plus static checks and builds. Actual Electron/application, end-to-end, user-data migration and
+live-provider verification are deferred pending the user's explicit permission; passing these
+isolated checks is not runtime acceptance.
 
 ### Configuration and secrets
 
