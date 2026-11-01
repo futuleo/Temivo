@@ -8,7 +8,8 @@
     "dev": "install-electron && electron-vite dev",
     "build": "electron-vite build",
     "start": "install-electron && electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
+    "test": "vitest run"
   },
   "dependencies": {
     "@temivo/core": "workspace:*",
@@ -23,6 +24,7 @@
     "electron": "^45.2.1",
     "electron-vite": "^5.0.0",
     "typescript": "catalog:",
-    "vite": "^7.3.7"
+    "vite": "^7.3.7",
+    "vitest": "catalog:"
   }
 }
