@@ -308,7 +308,6 @@ function validatedChanges(
 ): readonly GenerationChange[] {
   if (!Array.isArray(changes)) invalid('Generation changes must be an array.');
   const ids = new Set<string>();
-  const scope = descendantIds(document.map, anchorNodeId);
   const depths = nodeDepths(document, anchorNodeId);
   const result: GenerationChange[] = [];
   for (const change of changes) {
@@ -318,13 +317,12 @@ function validatedChanges(
     ids.add(change.nodeId);
     const existing = document.map.nodes.find((node) => node.id === change.nodeId);
     if (existing) {
-      if ((depths.get(existing.id) ?? 0) > requestedDepth) {
-        invalid('Generation cannot change stored nodes deeper than the requested depth.');
+      const depth = depths.get(existing.id);
+      if (depth === undefined) {
+        invalid('Generation may only change existing nodes in its current anchor subtree.');
       }
-      const provenance = requireMetadata(document, existing.id).provenance;
-      if (!scope.has(existing.id) &&
-          !(provenance.kind === 'ai' && provenance.anchorNodeId === anchorNodeId)) {
-        invalid('Generation may only change nodes in its anchor scope.');
+      if (depth > requestedDepth) {
+        invalid('Generation cannot change stored nodes deeper than the requested depth.');
       }
     } else if (document.retiredNodeIds.includes(change.nodeId)) {
       invalid('Generation cannot reuse retired node identities.');
@@ -369,13 +367,14 @@ function assertProjectedScope(
   changes: readonly GenerationChange[],
 ): void {
   const nodes = projectedNodes(document, changes);
-  const nextScope = descendantIds({ ...document.map, nodes }, anchorNodeId);
   const nextDepths = nodeDepths({ ...document, map: { ...document.map, nodes } }, anchorNodeId);
   for (const change of changes) {
-    if (change.kind === 'upsert' && !nextScope.has(change.nodeId)) {
+    if (change.kind !== 'upsert') continue;
+    const depth = nextDepths.get(change.nodeId);
+    if (depth === undefined) {
       invalid('Generated nodes must remain within their anchor subtree.');
     }
-    if (change.kind === 'upsert' && (nextDepths.get(change.nodeId) ?? 0) > requestedDepth) {
+    if (depth > requestedDepth) {
       invalid('Generated nodes cannot exceed the requested depth.');
     }
   }

@@ -222,6 +222,51 @@ describe('manual content and conflict proposals', () => {
       .toEqual([{ nodeId: 'deep', reason: 'different-generation' }]);
   });
 
+  it.each<{ label: string; change: GenerationChange }>([
+    { label: 'removal of a pristine descendant', change: { kind: 'remove', nodeId: 'X' } },
+    { label: 'return of a pristine descendant', change: upsert('X', 'A', 'Regenerated') },
+    { label: 'return of the edited ancestor', change: upsert('P', 'A', 'Regenerated') },
+  ])('rejects $label from a branch relocated outside the current anchor', ({ change }) => {
+    let library = addNode(createMapLibrary([createTopicMap('map', 'A', 'A')]), 'map', {
+      id: 'B', parentId: null, text: 'Separate root',
+    });
+    library = editNode(library, 'map', 'A', {
+      context: { instructions: '', detail: 'brief', depth: 2 },
+    });
+    const initial = beginGeneration(library, 'map', 'A');
+    library = applyGenerationPlan(initial.library, planGeneration(initial.library, initial.request, [
+      upsert('P', 'A'), upsert('X', 'P'),
+    ])).library;
+    const relocated = reparentNode(library, 'map', 'P', 'B');
+    expect(isPristineAiNode(document(relocated), 'P')).toBe(false);
+    expect(isPristineAiNode(document(relocated), 'X')).toBe(true);
+
+    const started = beginGeneration(relocated, 'map', 'A');
+    expect(started.request.existingNodes.map((node) => node.nodeId)).toEqual(['A']);
+    const snapshot = frozen(started.library);
+    const before = JSON.stringify(snapshot);
+    const changes = frozen([change]);
+    expect(() => applyGenerationPlan(snapshot, planGeneration(snapshot, started.request, changes)))
+      .toThrow(InvalidMindMapError);
+    expect(() => applyGenerationPlan(snapshot, {
+      request: started.request, changes, automaticNodeIds: [change.nodeId], conflicts: [],
+    })).toThrow(InvalidMindMapError);
+    expect(JSON.stringify(snapshot)).toBe(before);
+    expect(document(snapshot).map.nodes.find((node) => node.id === 'P')?.parentId).toBe('B');
+    expect(document(snapshot).map.nodes.find((node) => node.id === 'X')?.parentId).toBe('P');
+    expect(document(snapshot).retiredNodeIds).toEqual([]);
+  });
+
+  it('still automatically reparents pristine nodes within the current anchor subtree and depth', () => {
+    const original = frozen(seeded());
+    const result = apply(original, [upsert('deep', 'sibling')]);
+    expect(result.plan.automaticNodeIds).toEqual(['deep']);
+    expect(result.pendingConflicts).toBeNull();
+    expect(document(result.library).map.nodes.find((node) => node.id === 'deep')?.parentId).toBe('sibling');
+    expect(isPristineAiNode(document(result.library), 'deep')).toBe(true);
+    expect(document(original).map.nodes.find((node) => node.id === 'deep')?.parentId).toBe('ai');
+  });
+
   it('protects linked-world anchors and their ancestors without modifying the independent world', () => {
     const linked = frozen(linkMaps(seeded(), {
       sourceMapId: 'map', sourceNodeId: 'deep', targetMapId: 'world',
