@@ -128,8 +128,11 @@ The default `refresh` mode accepts explicit node-ID patches:
 `{ kind: 'upsert', nodeId, parentId, text, description }` or `{ kind: 'remove', nodeId }`.
 An omitted node is **always retained**; a shorter response is never interpreted as a deletion diff.
 Changes outside the selected scope/depth, duplicate/reused IDs, missing parents, cycles, and
-removing/reparenting the anchor are rejected. Reparented AI content from this anchor can still be
-proposed back into scope, but user reparenting cannot be silently undone.
+removing/reparenting the anchor are rejected. Every existing upsert/remove target must already
+belong to the anchor's **current** subtree and requested depth. Historical AI provenance does not
+re-admit a relocated branch or its pristine descendants; those nodes must first be explicitly moved
+back by the editor or addressed from their current location. In-scope user reparenting remains
+protected by conflict proposals.
 
 Use `expand` mode for lazy loading: the request includes existing saved children for reuse, and
 patches may only add missing identities or repeat unchanged content. Changing/removing existing
