@@ -1,8 +1,8 @@
-import type { AiInfrastructureErrorCode } from '../shared/ai-api';
+import type { AiErrorCode } from '../shared/ai-api';
 
 export type { AiInfrastructureErrorCode } from '../shared/ai-api';
 
-const messages: Record<AiInfrastructureErrorCode, string> = {
+const messages: Record<AiErrorCode, string> = {
   INVALID_CONFIG: 'Invalid AI provider configuration.',
   INVALID_REQUEST: 'Invalid AI request.',
   AUTHENTICATION: 'The AI provider rejected authentication.',
@@ -21,11 +21,14 @@ const messages: Record<AiInfrastructureErrorCode, string> = {
   ENCRYPTION_FAILED: 'Unable to protect the AI credential.',
   DECRYPTION_FAILED: 'Unable to unlock the AI credential.',
   KEY_MISSING: 'No credential is stored for this AI destination.',
+  STALE_GENERATION: 'Generation is stale. Start again against the current map.',
+  REQUEST_LIMIT: 'Too many generation requests in this window. Close it before starting more.',
+  AI_ERROR: 'Unable to complete the AI operation.',
 };
 
 // Never attach provider bodies, URLs, credentials, or original exception causes.
 export class AiInfrastructureError extends Error {
-  constructor(readonly code: AiInfrastructureErrorCode) {
+  constructor(readonly code: AiErrorCode) {
     super(messages[code]);
     this.name = 'AiInfrastructureError';
   }
