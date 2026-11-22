@@ -29,6 +29,7 @@ export const MAX_SCALE = 2;
 export const DEFAULT_VIEW_SIZE: ViewSize = { width: 960, height: 600 };
 const MAX_TRANSLATION = Number.MAX_SAFE_INTEGER / 4;
 const PADDING = 40;
+const FOCUS_PADDING = 64;
 const DRAG_THRESHOLD = 4;
 
 function finite(value: number, fallback: number): number {
@@ -79,9 +80,9 @@ export function zoomViewport(viewport: Viewport, factor: number, anchor: Point, 
   };
 }
 
-export function revealRectangle(viewport: Viewport, rawSize: ViewSize, rectangle: Rectangle): Viewport {
+export function revealRectangle(viewport: Viewport, rawSize: ViewSize, rectangle: Rectangle, padding = PADDING): Viewport {
   const size = viewSize(rawSize);
-  const margin = Math.min(PADDING, Math.min(size.width, size.height) / 4);
+  const margin = Math.min(padding, Math.min(size.width, size.height) / 4);
   const left = rectangle.x * viewport.scale + viewport.x;
   const top = rectangle.y * viewport.scale + viewport.y;
   const width = rectangle.width * viewport.scale;
@@ -93,6 +94,30 @@ export function revealRectangle(viewport: Viewport, rawSize: ViewSize, rectangle
     return 0;
   };
   return panViewport(viewport, { x: shift(left, width, size.width), y: shift(top, height, size.height) });
+}
+
+export function clientRectangleToCanvas(rectangle: Rectangle, boardOrigin: Point, paintedViewport: Viewport): Rectangle {
+  return {
+    x: (rectangle.x - boardOrigin.x - paintedViewport.x) / paintedViewport.scale,
+    y: (rectangle.y - boardOrigin.y - paintedViewport.y) / paintedViewport.scale,
+    width: rectangle.width / paintedViewport.scale,
+    height: rectangle.height / paintedViewport.scale,
+  };
+}
+
+export function revealFocusedControl(viewport: Viewport, rawSize: ViewSize, rectangle: Rectangle): Viewport {
+  const size = viewSize(rawSize);
+  // Keep keyboard targets clear of the stationary caption and floating view controls.
+  const margin = Math.min(FOCUS_PADDING, Math.min(size.width, size.height) / 4);
+  const scale = Math.min(viewport.scale,
+    (size.width - margin * 2) / Math.max(1, rectangle.width),
+    (size.height - margin * 2) / Math.max(1, rectangle.height));
+  const center = {
+    x: (rectangle.x + rectangle.width / 2) * viewport.scale + viewport.x,
+    y: (rectangle.y + rectangle.height / 2) * viewport.scale + viewport.y,
+  };
+  const zoomed = zoomViewport(viewport, scale / viewport.scale, center, scale);
+  return revealRectangle(zoomed, size, rectangle, FOCUS_PADDING);
 }
 
 function initialViewport(layout: CanvasLayout, size: ViewSize, anchorId: string | null): Viewport {
@@ -140,6 +165,7 @@ export type CanvasViewAction =
   | { type: 'wheel'; wheel: WheelInput; anchor: Point }
   | { type: 'fit' }
   | { type: 'reveal'; nodeId: string }
+  | { type: 'focus-control'; rectangle: Rectangle }
   | { type: 'begin'; pointerId: number; point: Point }
   | { type: 'move'; pointerId: number; point: Point }
   | { type: 'end'; pointerId: number }
@@ -229,6 +255,8 @@ export function canvasViewReducer(state: CanvasViewState, action: CanvasViewActi
       const node = state.layout.byId.get(action.nodeId);
       return node ? { ...state, viewport: revealRectangle(state.viewport, state.size, node), gesture: null } : state;
     }
+    case 'focus-control':
+      return { ...state, viewport: revealFocusedControl(state.viewport, state.size, action.rectangle), gesture: null };
     case 'begin':
       if (state.gesture || !Number.isFinite(action.point.x) || !Number.isFinite(action.point.y)) return state;
       return { ...state, gesture: { pointerId: action.pointerId, start: action.point, viewport: state.viewport, dragged: false } };

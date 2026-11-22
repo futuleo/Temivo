@@ -45,3 +45,16 @@ it('keeps renderer FSD imports downward, slices isolated, and cross-slice import
   }
   expect(violations).toEqual([]);
 });
+
+it('clips the canvas without a native scroll camera and anchors overlays outside the transform scene', () => {
+  const css = readFileSync(resolve(root, 'styles.css'), 'utf8');
+  const viewport = css.match(/\.canvas-viewport\s*\{([^}]+)\}/)?.[1];
+  expect(viewport).toMatch(/\boverflow:\s*clip\s*;/);
+  expect(viewport).not.toMatch(/\boverflow(?:-x|-y)?:\s*(hidden|auto|scroll)\s*;/);
+  expect(viewport).not.toMatch(/\btransform:/);
+  for (const overlay of ['canvas-caption', 'canvas-toolbar', 'canvas-help']) {
+    const declarations = css.match(new RegExp(`\\.${overlay}\\s*\\{([^}]+)\\}`))?.[1];
+    expect(declarations).toMatch(/\bposition:\s*absolute\s*;/);
+    expect(declarations).not.toMatch(/\btransform:/);
+  }
+});

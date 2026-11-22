@@ -180,9 +180,11 @@ can be hidden to give the board more room; hiding details keeps the editor and i
 Drag empty board space with a mouse or pen to pan. Scroll/trackpad deltas pan; Ctrl/Cmd + scroll
 zooms around the pointer. Focus the board for arrow-key panning, +/- zoom, F (or 0/Home) to fit,
 and Esc to cancel a pan. Floating controls show the current zoom, fit all visible content or bring
-the selection into view. Tab-focusing a node also brings it into view. Resizing preserves the
-view's center, and layout changes preserve the selected thought's screen position. Viewport state
-is local to the open world, resets when switching maps or leaving the world view, and never saves coordinates or changes node
+the selection into view. Tab-focusing a node control reveals that button, reducing zoom only if
+the button itself cannot fit. The board clips without native scrolling; only the scene moves,
+keeping its overlay controls stationary. Resizing preserves the view's center, and layout changes
+preserve the selected thought's screen position. Viewport state is local to the open world,
+resets when switching maps or leaving the world view, and never saves coordinates or changes node
 hierarchy/provenance. Node dragging and touch pinch are not supported.
 
 Use the inspector to edit a node's text, description,

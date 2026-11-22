@@ -5,12 +5,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { createMapDocument } from '@temivo/core';
 import { CanvasNodeCard, NodeCanvas } from './NodeCanvas';
 import { CARD_SIZE, layoutNodes } from './canvas-layout';
+import type { Rectangle } from './canvas-layout';
 
 interface TestElementProps {
   children?: ReactNode;
   className?: string;
   onClick?: () => void;
-  onFocus?: (event: { target: { matches: (selector: string) => boolean } }) => void;
+  onFocus?: (event: { target: {
+    matches: (selector: string) => boolean;
+    getBoundingClientRect: () => Rectangle;
+  } }) => void;
   'aria-pressed'?: boolean;
   'aria-expanded'?: boolean;
 }
@@ -58,11 +62,11 @@ describe('actual canvas and card presentation without a DOM/application', () => 
     const onSelect = vi.fn();
     const onToggle = vi.fn();
     const onOpenWorld = vi.fn();
-    const onFocusNode = vi.fn();
+    const onFocusControl = vi.fn();
     const item = layoutNodes(document, ['root']).byId.get('left')!;
     const card = CanvasNodeCard({
       item, metadata: document.nodeMetadata.find((entry) => entry.nodeId === 'left'), selected: true, linked: true,
-      onSelect, onToggle, onOpenWorld, onFocusNode,
+      onSelect, onToggle, onOpenWorld, onFocusControl,
     });
     const controls = buttons(card);
     const select = controls.find((element) => element.props.className === 'node-content')!;
@@ -79,12 +83,13 @@ describe('actual canvas and card presentation without a DOM/application', () => 
     expect(onToggle).toHaveBeenCalledExactlyOnceWith('left');
     expect(onOpenWorld).toHaveBeenCalledExactlyOnceWith('left');
     expect(isValidElement<TestElementProps>(card)).toBe(true);
+    const rectangle = { x: 120, y: 100, width: 90, height: 22 };
     if (isValidElement<TestElementProps>(card)) {
-      card.props.onFocus?.({ target: { matches: () => false } });
-      expect(onFocusNode).not.toHaveBeenCalled();
-      card.props.onFocus?.({ target: { matches: (selector) => selector === ':focus-visible' } });
+      card.props.onFocus?.({ target: { matches: () => false, getBoundingClientRect: () => rectangle } });
+      expect(onFocusControl).not.toHaveBeenCalled();
+      card.props.onFocus?.({ target: { matches: (selector) => selector === ':focus-visible', getBoundingClientRect: () => rectangle } });
     }
-    expect(onFocusNode).toHaveBeenCalledExactlyOnceWith('left');
+    expect(onFocusControl).toHaveBeenCalledExactlyOnceWith(rectangle);
     const html = renderToStaticMarkup(createElement(NodeCanvas, {
       document, links: [{ sourceMapId: 'one', sourceNodeId: 'left', targetMapId: 'independent' }],
       selectedNodeId: 'left', expandedNodeIds: ['root'], onSelect, onToggle, onOpenWorld,
@@ -122,7 +127,7 @@ describe('actual canvas and card presentation without a DOM/application', () => 
           kind: 'ai', anchorNodeId: 'root', baselineRevision: 0, userEdited,
           baseline: { parentId: 'root', text: item.node.text, description: '' },
         } },
-        selected: false, linked: false, onSelect: vi.fn(), onToggle: vi.fn(), onOpenWorld: vi.fn(), onFocusNode: vi.fn(),
+        selected: false, linked: false, onSelect: vi.fn(), onToggle: vi.fn(), onOpenWorld: vi.fn(), onFocusControl: vi.fn(),
       }));
       expect(html).toContain(userEdited ? 'AI + YOUR EDITS' : ' / AI');
       expect(html).not.toContain('Open world');

@@ -2,8 +2,8 @@ import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef } from '
 import type { CSSProperties } from 'react';
 import type { MapDocument, MapLink, NodeMetadata } from '@temivo/core';
 import { BRANCH_COLORS, layoutNodes, visibleAnchor } from './canvas-layout';
-import type { CanvasNode } from './canvas-layout';
-import { boardKeyboardAction, canvasViewReducer, createCanvasView, MAX_SCALE, minimumScale, zoomLabel } from './canvas-viewport';
+import type { CanvasNode, Rectangle } from './canvas-layout';
+import { boardKeyboardAction, canvasViewReducer, clientRectangleToCanvas, createCanvasView, MAX_SCALE, minimumScale, zoomLabel } from './canvas-viewport';
 import { createCanvasPan } from './canvas-interaction';
 
 export interface NodeCanvasProps {
@@ -21,7 +21,7 @@ export function NodeCanvas(props: NodeCanvasProps) {
 }
 
 export function CanvasNodeCard({
-  item, metadata, linked, selected, onSelect, onToggle, onOpenWorld, onFocusNode,
+  item, metadata, linked, selected, onSelect, onToggle, onOpenWorld, onFocusControl,
 }: {
   item: CanvasNode;
   metadata: NodeMetadata | undefined;
@@ -30,7 +30,7 @@ export function CanvasNodeCard({
   onSelect: NodeCanvasProps['onSelect'];
   onToggle: NodeCanvasProps['onToggle'];
   onOpenWorld: NodeCanvasProps['onOpenWorld'];
-  onFocusNode: (nodeId: string) => void;
+  onFocusControl: (rectangle: Rectangle) => void;
 }) {
   const { node, depth, childCount, expanded, side, color, x, y, width, height } = item;
   const text = node.text || 'Untitled node';
@@ -39,7 +39,7 @@ export function CanvasNodeCard({
   };
   return (
     <article data-canvas-node={node.id} style={style} onFocus={(event) => {
-      if (event.target.matches(':focus-visible')) onFocusNode(node.id);
+      if (event.target.matches(':focus-visible')) onFocusControl(event.target.getBoundingClientRect());
     }}
       className={`node-card node-${side} ${selected ? 'selected' : ''}`}>
       <button type="button" className="node-content" aria-pressed={selected} onClick={() => onSelect(node.id)} title={text}>
@@ -145,7 +145,13 @@ function CanvasBoard({
           {layout.nodes.map((item) => <CanvasNodeCard key={item.node.id} item={item} metadata={metadata.get(item.node.id)}
             linked={linkedNodes.has(item.node.id)} selected={selectedNodeId === item.node.id}
             onSelect={onSelect} onToggle={onToggle} onOpenWorld={onOpenWorld}
-            onFocusNode={(nodeId) => dispatch({ type: 'reveal', nodeId })} />)}
+            onFocusControl={(rectangle) => {
+              const board = boardRef.current;
+              if (board) dispatch({
+                type: 'focus-control',
+                rectangle: clientRectangleToCanvas(rectangle, board.getBoundingClientRect(), view.viewport),
+              });
+            }} />)}
         </div>
         <div className="canvas-toolbar" role="group" aria-label="Canvas view controls" data-canvas-controls>
           <button type="button" aria-label="Zoom out" title="Zoom out" disabled={view.viewport.scale <= minimumScale(layout, view.size)} onClick={() => dispatch({ type: 'zoom', factor: 1 / 1.2 })}>−</button>
