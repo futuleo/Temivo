@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { isDraftDirty, nodeFingerprint, parentChoices } from '../entities/map';
 import type { ProviderSettingsProps } from '../features/provider-settings';
@@ -26,6 +26,8 @@ export function WorkspaceView({
 }) {
   const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const navigationId = useId();
   const drafts = [...state.drafts.values()].filter((entry) => isDraftDirty(entry.draft));
   const hasUnsaved = state.dirty || drafts.length > 0 || settings.dirty || settings.saving || state.generation !== null || state.proposals.size > 0;
   useEffect(() => {
@@ -60,13 +62,15 @@ export function WorkspaceView({
   const deleteMap = (id: string) => confirm('Delete this map?', <><p>This deletes the map and its nodes, and removes incoming links and collection memberships.</p><p>Other maps, including worlds linked from this map, will not be deleted. Unapplied node drafts are kept in this session.</p></>, 'Delete map', () => workspace.deleteMap(id));
 
   return (
-    <div className="app-shell">
-      <LibraryNav library={library} collectionId={state.collectionId} page={state.page} draftCount={drafts.length} disabled={disabled}
+    <div className={`app-shell ${state.page === 'world' ? 'world-shell' : ''} ${state.page === 'world' && !navigationOpen ? 'navigation-closed' : ''}`}>
+      <div id={navigationId} className="navigation-region" hidden={state.page === 'world' && !navigationOpen}>
+        <LibraryNav library={library} collectionId={state.collectionId} page={state.page} draftCount={drafts.length} disabled={disabled}
         onLibrary={(id) => workspace.showLibrary(id)} onSettings={() => workspace.showSettings()}
         onCreateCollection={() => name('Create a collection', 'Collection name', 'Create collection', (value) => workspace.createCollection(value))} />
+      </div>
       <main className="main-content" id="main-content" tabIndex={-1}>
         <div className={`status-bar ${state.dirty ? 'status-unsaved' : ''}`}>
-          <span role="status"><span className="status-dot" aria-hidden="true" />{state.loading ? 'Reloading saved library…' : state.storageConflict ? 'Version conflict · Local work retained' : state.saving ? 'Saving library…' : state.dirty ? 'Changes kept locally · Not saved yet' : 'All applied changes saved on this device'}</span>
+          <div className="status-leading">{state.page === 'world' && <button type="button" aria-controls={navigationId} aria-expanded={navigationOpen} onClick={() => setNavigationOpen(!navigationOpen)}>{navigationOpen ? 'Hide navigation' : 'Navigation'}</button>}<span role="status"><span className="status-dot" aria-hidden="true" />{state.loading ? 'Reloading saved library…' : state.storageConflict ? 'Version conflict · Local work retained' : state.saving ? 'Saving library…' : state.dirty ? 'Changes kept locally · Not saved yet' : 'All applied changes saved on this device'}</span></div>
           <div className="actions">
             {drafts.length > 0 && <span>{drafts.length} unapplied {drafts.length === 1 ? 'draft' : 'drafts'}</span>}
             {state.dirty && !state.storageConflict && <button type="button" disabled={state.saving} onClick={() => void workspace.save()}>Retry save</button>}
@@ -84,7 +88,7 @@ export function WorkspaceView({
           onDeleteCollection={(id) => confirm('Delete this collection?', <p>Only this collection is removed. Every map stays in All Maps and in its other collections.</p>, 'Delete collection', () => workspace.deleteCollection(id))}
           onToggleWorld={(id) => workspace.toggleWorld(id)} onOpenWorld={(id, via) => workspace.openWorld(id, via)} />}
         {state.page === 'settings' && <SettingsPage {...settings} />}
-        {state.page === 'world' && document && state.path && <WorldPage library={library} document={document} path={state.path} selectedNodeId={node?.id ?? null} expandedNodeIds={state.expandedNodes.get(document.map.id) ?? []} disabled={disabled}
+        {state.page === 'world' && document && state.path && <WorldPage key={document.map.id} library={library} document={document} path={state.path} selectedNodeId={node?.id ?? null} expandedNodeIds={state.expandedNodes.get(document.map.id) ?? []} disabled={disabled}
           onSelect={(id) => workspace.selectNode(id)} onToggle={(id) => workspace.toggleNode(id)} onOpenWorld={(id) => workspace.followWorld(id)}
           onBreadcrumb={(index) => workspace.breadcrumb(index)} onBack={() => workspace.back()} onLibrary={() => workspace.showLibrary()}
           onAddRoot={() => name('Add a root node', 'Node text', 'Add node', (text) => workspace.addNode(document.map.id, null, text))}

@@ -88,4 +88,34 @@ describe('assembled application presentation without a DOM or running app', () =
     expect(world).toContain('Keep my draft');
     expect(world).toContain('AI is not configured');
   });
+
+  it('prioritizes the actual world canvas while retaining hidden navigation, editor and unapplied drafts', async () => {
+    const library = createMapLibrary([createTopicMap('one', 'root', 'Thinking space')]);
+    const ports = {
+      load: vi.fn(async () => ({ library, revision: 1 })),
+      save: vi.fn(async (value) => ({ library: value, revision: 2 })),
+      generate: vi.fn(async () => []), cancel: vi.fn(async () => undefined), newId: () => 'unused',
+    };
+    const workspace = new Workspace(ports);
+    await workspace.initialize();
+    workspace.openWorld('one');
+    workspace.changeDraft('one', 'root', { ...workspace.getDraft('one', 'root')!.fields, description: 'Retained while hidden' });
+    const world = renderToStaticMarkup(createElement(WorkspaceView, { workspace, settings, aiReady: false }));
+    expect(world).toContain('world-shell navigation-closed');
+    expect(world).toMatch(/class="navigation-region" hidden=""/);
+    expect(world).toMatch(/aria-label="Selected node inspector" hidden=""/);
+    expect(world).toContain('Mind map canvas: Thinking space');
+    expect(world).toContain('data-canvas-node="root"');
+    expect(world).toContain('Retained while hidden');
+    expect(world).toContain('Unapplied draft');
+    expect(world).toContain('Navigation');
+    expect(world).toContain('Node details');
+    expect(world).toContain('Settings');
+    expect(ports.save).not.toHaveBeenCalled();
+    expect(ports.generate).not.toHaveBeenCalled();
+    workspace.showLibrary();
+    const page = renderToStaticMarkup(createElement(WorkspaceView, { workspace, settings, aiReady: false }));
+    expect(page).not.toContain('navigation-closed');
+    expect(page).not.toMatch(/class="navigation-region" hidden=""/);
+  });
 });

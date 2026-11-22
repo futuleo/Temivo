@@ -171,7 +171,21 @@ import its public package API instead of duplicating map/editor logic. An isolat
 test checks layer direction and slice boundaries.
 
 All Maps includes every independent world. Collections are flat and many-to-many; their removal
-never deletes a map. Open a map, select a node, and use the inspector to edit its text, description,
+never deletes a map. Worlds open on a spatial mind-map canvas: central topics, balanced left/right
+branches, curved connections and selectable HTML cards, rather than an indented list. Forests and
+collapsed saved branches use the same automatic arrangement. Long card text is clipped visually;
+select a node and open **Node details** to read and edit the complete fields. Details and navigation
+can be hidden to give the board more room; hiding details keeps the editor and its draft mounted.
+
+Drag empty board space with a mouse or pen to pan. Scroll/trackpad deltas pan; Ctrl/Cmd + scroll
+zooms around the pointer. Focus the board for arrow-key panning, +/- zoom, F (or 0/Home) to fit,
+and Esc to cancel a pan. Floating controls show the current zoom, fit all visible content or bring
+the selection into view. Tab-focusing a node also brings it into view. Resizing preserves the
+view's center, and layout changes preserve the selected thought's screen position. Viewport state
+is local to the open world, resets when switching maps or leaving the world view, and never saves coordinates or changes node
+hierarchy/provenance. Node dragging and touch pinch are not supported.
+
+Use the inspector to edit a node's text, description,
 AI instructions, detail and relative depth. **Apply changes** commits a form draft to the local
 library and starts a whole-library CAS save. Structure changes save automatically. A visible
 status distinguishes saving, unapplied drafts, retained unsaved changes and version conflicts.
